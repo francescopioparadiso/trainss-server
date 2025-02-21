@@ -7,6 +7,7 @@ import httpx
 from typing import Optional, Dict
 import asyncio
 from datetime import datetime, timedelta
+import os
 
 app = FastAPI()
 
@@ -14,7 +15,7 @@ app = FastAPI()
 TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
-AUTH_KEY_PATH = "/etc/secrets/AuthKey_54QRS283BA.p8"
+AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"  # Updated to match Render's path
 APNS_HOST = "api.sandbox.push.apple.com"
 APNS_PORT = 443
 
@@ -39,8 +40,9 @@ class TrainUpdate(BaseModel):
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
-    with open(AUTH_KEY_PATH, 'r') as key_file:
-        auth_key = key_file.read()
+    auth_key = os.environ.get('APNS_AUTH_KEY')
+    if not auth_key:
+        raise HTTPException(status_code=500, detail="APNS authentication key not found")
 
     token = jwt.encode(
         {
