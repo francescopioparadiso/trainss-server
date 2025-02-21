@@ -14,7 +14,7 @@ app = FastAPI()
 TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
-AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"  # Updated to match Render's path
+AUTH_KEY_PATH = "/etc/secrets/AuthKey_54QRS283BA.p8"
 APNS_HOST = "api.sandbox.push.apple.com"
 APNS_PORT = 443
 
