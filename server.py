@@ -105,7 +105,19 @@ async def send_push_notification(token: str, payload: dict):
         'apns-push-type': 'liveactivity',
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
-        'apns-priority': '5'
+        'apns-priority': '10',
+        'apns-push-type': 'liveactivity'
+    }
+
+    payload = {
+        "aps": {
+            "timestamp": int(time.time()),
+            "event": "update",
+            "content-state": payload["aps"]["content-state"],
+            "relevance-score": 1.0,
+            "stale-date": int(time.time() + 3600),
+            "dismissal-date": int(time.time() + 7200)
+        }
     }
 
     url = f'https://{APNS_HOST}:{APNS_PORT}/3/device/{token}'
