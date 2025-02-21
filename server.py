@@ -75,7 +75,7 @@ async def periodic_updates():
                 except Exception as e:
                     print(f"Error sending update to token {token}: {str(e)}")
         
-        await asyncio.sleep(30)
+        await asyncio.sleep(10)
 
 # Your existing functions stay the same
 async def create_token():
