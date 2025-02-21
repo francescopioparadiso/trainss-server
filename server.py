@@ -7,6 +7,7 @@ import httpx
 from typing import Optional, Dict
 import asyncio
 from datetime import datetime, timedelta
+import os
 
 app = FastAPI()
 
@@ -86,8 +87,10 @@ async def periodic_updates():
 # Your existing functions stay the same
 async def create_token():
     """Create a JWT token for APNs authentication."""
-    with open(AUTH_KEY_PATH, 'r') as key_file:
-        auth_key = key_file.read()
+    # Use environment variable instead of file
+    auth_key = os.environ.get('APNS_AUTH_KEY')
+    if not auth_key:
+        raise HTTPException(status_code=500, detail="APNS authentication key not found")
 
     token = jwt.encode(
         {
