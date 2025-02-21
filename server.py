@@ -10,14 +10,12 @@ from datetime import datetime, timedelta
 
 app = FastAPI()
 
-# Configuration
-TEAM_ID = "7QM8T4XA98"  # Replace with your Apple Team ID
+# Your existing configuration stays the same
+TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
-BUNDLE_ID = "francescoparadis.Trainss"  # Replace with your app bundle ID
-AUTH_KEY_PATH = "Trainss/Resources/AuthKey_54QRS283BA.p8"
-
-# APNs Configuration
-APNS_HOST = "api.sandbox.push.apple.com"  # Use api.push.apple.com for production
+BUNDLE_ID = "francescoparadis.Trainss"
+AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"  # Updated to match Render's path
+APNS_HOST = "api.sandbox.push.apple.com"
 APNS_PORT = 443
 
 # Store active sessions
@@ -26,7 +24,18 @@ active_activities: Dict[str, dict] = {}
 class TrainUpdate(BaseModel):
     push_token: str
     ritardo: int
-    compOraUltimoRilevamento: str
+    problemi: str
+    programmato: bool
+    tracciato: bool
+    prossimaStazione: str
+    prossimoBinario: str
+    tempoProssimaStazione: int
+    stazioneUltimoRilevamento: str
+    orarioUltimoRilevamento: int
+    stazionePartenza: str
+    orarioPartenza: int
+    stazioneArrivo: str
+    orarioArrivo: int
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
@@ -59,33 +68,36 @@ async def send_push_notification(token: str, payload: dict):
     }
 
     url = f'https://{APNS_HOST}:{APNS_PORT}/3/device/{token}'
+    print(f"Sending push notification to: {url}")
+    print(f"Payload: {payload}")
     
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, json=payload, headers=headers)
+            print(f"APNs response status: {response.status_code}")
             if response.status_code == 200:
                 return {"status": "success"}
             else:
+                print(f"APNs error response: {response.text}")
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=f"APNs error: {response.text}"
                 )
         except Exception as e:
+            print(f"Error sending push notification: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
 async def periodic_updates():
-    """Send updates every 10 seconds to all active live activities."""
+    """Send updates every 30 seconds to all active live activities."""
     while True:
+        print(f"Running periodic updates for {len(active_activities)} activities")
         for token, data in active_activities.items():
             try:
                 payload = {
                     "aps": {
                         "timestamp": int(time.time()),
                         "event": "update",
-                        "content-state": {
-                            "ritardo": data["ritardo"],
-                            "compOraUltimoRilevamento": data["compOraUltimoRilevamento"]
-                        },
+                        "content-state": data,
                         "alert": {
                             "title": "Train Update",
                             "body": f"Delay: {data['ritardo']} minutes"
@@ -96,41 +108,33 @@ async def periodic_updates():
             except Exception as e:
                 print(f"Error sending update to {token}: {str(e)}")
         
-        await asyncio.sleep(10)  # Wait for 10 seconds before next update
+        await asyncio.sleep(30)  # Increased to 30 seconds to reduce server load
 
 @app.post("/update-train-activity")
 async def update_train_activity(update: TrainUpdate):
-    """
-    Endpoint to send Live Activity updates for train status and store the activity
-    """
+    """Endpoint to send Live Activity updates for train status"""
+    print(f"Received update request for token: {update.push_token}")
+    
     # Store or update the activity data
-    active_activities[update.push_token] = {
-        "ritardo": update.ritardo,
-        "compOraUltimoRilevamento": update.compOraUltimoRilevamento
-    }
-
+    active_activities[update.push_token] = update.dict(exclude={'push_token'})
+    
     payload = {
         "aps": {
             "timestamp": int(time.time()),
             "event": "update",
-            "content-state": {
-                "ritardo": update.ritardo,
-                "compOraUltimoRilevamento": update.compOraUltimoRilevamento
-            },
+            "content-state": update.dict(exclude={'push_token'}),
             "alert": {
                 "title": "Train Update",
                 "body": f"Delay: {update.ritardo} minutes"
             }
         }
     }
-
+    
     return await send_push_notification(update.push_token, payload)
 
 @app.post("/end-train-activity")
 async def end_train_activity(update: TrainUpdate):
-    """
-    Endpoint to end a Live Activity
-    """
+    """Endpoint to end a Live Activity"""
     if update.push_token in active_activities:
         del active_activities[update.push_token]
 
@@ -138,19 +142,23 @@ async def end_train_activity(update: TrainUpdate):
         "aps": {
             "timestamp": int(time.time()),
             "event": "end",
-            "content-state": {
-                "ritardo": update.ritardo,
-                "compOraUltimoRilevamento": update.compOraUltimoRilevamento
+            "content-state": update.dict(exclude={'push_token'}),
+            "alert": {
+                "title": "Journey Completed",
+                "body": "Train has reached its destination"
             }
         }
     }
 
     return await send_push_notification(update.push_token, payload)
 
-# Test endpoint
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "active_activities": len(active_activities)
+    }
 
 @app.on_event("startup")
 async def startup_event():
@@ -159,7 +167,4 @@ async def startup_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
