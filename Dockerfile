@@ -2,10 +2,6 @@ FROM python:3.9
 
 WORKDIR /code
 
-RUN python -m venv venv && \
-    . venv/bin/activate && \
-    pip install --no-cache-dir -r requirements.txt
-
 COPY ./requirements.txt /code/requirements.txt
 COPY ./server.py /code/server.py
 
