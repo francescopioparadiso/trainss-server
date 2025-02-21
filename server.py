@@ -10,18 +10,19 @@ from datetime import datetime, timedelta
 
 app = FastAPI()
 
-# Your existing configuration stays the same
+# Your configuration
 TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
 AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"
-APNS_HOST = "api.sandbox.push.apple.com"
+APNS_HOST = "api.development.push.apple.com"  # Use this for development
 APNS_PORT = 443
 
 # Store both active activities and train-token mappings
 active_activities: Dict[str, dict] = {}
 train_tokens: Dict[str, str] = {}
 
+# Add proper type hints to the models
 class TokenRegistration(BaseModel):
     train_id: str
     push_token: str
@@ -41,6 +42,11 @@ class TrainUpdate(BaseModel):
     orarioPartenza: int
     stazioneArrivo: str
     orarioArrivo: int
+
+@app.get("/")
+async def root():
+    """Root endpoint for health check"""
+    return {"status": "healthy"}
 
 @app.post("/register-token")
 async def register_token(registration: TokenRegistration):
@@ -144,49 +150,56 @@ async def send_push_notification(token: str, payload: dict):
 async def update_train_activity(update: TrainUpdate):
     """Endpoint to send Live Activity updates for train status"""
     print(f"Received update request for token: {update.push_token}")
+    print(f"Update data: {update.dict()}")  # Add this for debugging
     
-    # Store or update the activity data
-    active_activities[update.push_token] = update.dict(exclude={'push_token'})
-    
-    payload = {
-        "aps": {
-            "timestamp": int(time.time()),
-            "event": "update",
-            "content-state": update.dict(exclude={'push_token'}),
-            "alert": {
-                "title": "Train Update",
-                "body": f"Delay: {update.ritardo} minutes"
+    try:
+        # Store or update the activity data
+        active_activities[update.push_token] = update.dict(exclude={'push_token'})
+        
+        payload = {
+            "aps": {
+                "timestamp": int(time.time()),
+                "event": "update",
+                "content-state": update.dict(exclude={'push_token'}),
+                "alert": {
+                    "title": "Train Update",
+                    "body": f"Delay: {update.ritardo} minutes"
+                }
             }
         }
-    }
-    
-    return await send_push_notification(update.push_token, payload)
+        
+        return await send_push_notification(update.push_token, payload)
+    except Exception as e:
+        print(f"Error in update_train_activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/end-train-activity")
 async def end_train_activity(update: TrainUpdate):
     """Endpoint to end a Live Activity"""
-    # Remove from both dictionaries
-    if update.push_token in active_activities:
-        del active_activities[update.push_token]
-    
-    # Remove from train_tokens if present
-    for train_id, token in list(train_tokens.items()):
-        if token == update.push_token:
-            del train_tokens[train_id]
+    try:
+        if update.push_token in active_activities:
+            del active_activities[update.push_token]
+        
+        for train_id, token in list(train_tokens.items()):
+            if token == update.push_token:
+                del train_tokens[train_id]
 
-    payload = {
-        "aps": {
-            "timestamp": int(time.time()),
-            "event": "end",
-            "content-state": update.dict(exclude={'push_token'}),
-            "alert": {
-                "title": "Journey Completed",
-                "body": "Train has reached its destination"
+        payload = {
+            "aps": {
+                "timestamp": int(time.time()),
+                "event": "end",
+                "content-state": update.dict(exclude={'push_token'}),
+                "alert": {
+                    "title": "Journey Completed",
+                    "body": "Train has reached its destination"
+                }
             }
         }
-    }
 
-    return await send_push_notification(update.push_token, payload)
+        return await send_push_notification(update.push_token, payload)
+    except Exception as e:
+        print(f"Error in end_train_activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():
