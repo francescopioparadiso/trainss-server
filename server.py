@@ -69,13 +69,18 @@ async def send_push_notification(token: str, payload: dict):
         'apns-priority': '5'
     }
 
-    url = f'https://{APNS_HOST}:{APNS_PORT}/3/device/{token}'
+    url = f'https://{APNS_HOST}/3/device/{token}'
     print(f"Sending push notification to: {url}")
     print(f"Payload: {payload}")
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=True) as client:
         try:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, 
+                json=payload, 
+                headers=headers,
+                timeout=30.0  # Add timeout
+            )
             print(f"APNs response status: {response.status_code}")
             if response.status_code == 200:
                 return {"status": "success"}
@@ -85,6 +90,9 @@ async def send_push_notification(token: str, payload: dict):
                     status_code=response.status_code,
                     detail=f"APNs error: {response.text}"
                 )
+        except httpx.RequestError as e:
+            print(f"HTTP Request error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Request error: {str(e)}")
         except Exception as e:
             print(f"Error sending push notification: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
