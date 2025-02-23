@@ -58,7 +58,7 @@ async def register_token(registration: TokenRegistration):
     return {"status": "success"}
 
 async def periodic_updates():
-    """Send updates every 30 seconds to all active live activities."""
+    """Send updates every 10 seconds to all active live activities."""
     while True:
         print(f"Running periodic updates for {len(active_activities)} activities")
         current_time = int(time.time())  # Get current time in seconds
@@ -80,7 +80,7 @@ async def periodic_updates():
             except Exception as e:
                 print(f"Error sending update to {token}: {str(e)}")
         
-        await asyncio.sleep(30)
+        await asyncio.sleep(10)  # Changed to 10 seconds
 
 # Your existing functions stay the same
 async def create_token():
@@ -112,37 +112,35 @@ async def send_push_notification(token: str, payload: dict):
         'apns-push-type': 'liveactivity',
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
-        'apns-priority': '10',
-        'apns-push-type': 'liveactivity'
+        'apns-priority': '10',  # Changed to high priority (10)
     }
 
-    payload = {
-        "aps": {
-            "timestamp": int(time.time()),
-            "event": "update",
-            "content-state": payload["aps"]["content-state"],
-            "relevance-score": 1.0,
-            "stale-date": int(time.time() + 3600),
-            "dismissal-date": int(time.time() + 7200)
-        }
-    }
-
-    url = f'https://{APNS_HOST}:{APNS_PORT}/3/device/{token}'
+    url = f'https://{APNS_HOST}/3/device/{token}'
     print(f"Sending push notification to: {url}")
-    print(f"Payload: {payload}")
+    print(f"Headers: {json.dumps(headers, indent=2)}")
+    print(f"Payload: {json.dumps(payload, indent=2)}")
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=True) as client:
         try:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, 
+                json=payload, 
+                headers=headers,
+                timeout=30.0
+            )
             print(f"APNs response status: {response.status_code}")
             if response.status_code == 200:
                 return {"status": "success"}
             else:
-                print(f"APNs error response: {response.text}")
+                error_text = response.text
+                print(f"APNs error response: {error_text}")
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"APNs error: {response.text}"
+                    detail=f"APNs error: {error_text}"
                 )
+        except httpx.RequestError as e:
+            print(f"HTTP Request error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Request error: {str(e)}")
         except Exception as e:
             print(f"Error sending push notification: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
