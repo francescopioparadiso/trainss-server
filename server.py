@@ -138,46 +138,36 @@ async def periodic_updates():
         await asyncio.sleep(30)  # Increased to 30 seconds to reduce server load
 
 @app.post("/register-token")
-async def register_token(request: Request):
+async def register_token(registration: TokenRegistration):
+    """Register a push token for a train"""
     try:
-        data = await request.json()
-        logger.info(f"Received registration request: {data}")
-        
-        train_id = data.get("train_id")
-        push_token = data.get("push_token")
-        
-        if not train_id or not push_token:
-            raise HTTPException(status_code=400, detail="Missing train_id or push_token")
-            
-        active_activities[push_token] = {
-            "train_id": train_id,
-            "push_token": push_token
+        logger.info(f"Registering token for train {registration.train_id}")
+        active_activities[registration.push_token] = {
+            "train_id": registration.train_id,
+            "push_token": registration.push_token
         }
-        logger.info(f"Registered token. Current tokens: {active_activities}")
+        logger.info(f"Current tokens: {active_activities}")
         return {"status": "Token registered"}
     except Exception as e:
-        logger.error(f"Error in register_token: {str(e)}")
+        logger.error(f"Error registering token: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/update-train-activity")
-async def update_train_activity(request: Request):
+async def update_train_activity(update: TrainUpdate):
+    """Update train activity status"""
     try:
-        data = await request.json()
-        logger.info(f"Received update request: {data}")
+        logger.info(f"Received update for token: {update.push_token}")
         
-        push_token = data.get("push_token")
-        if not push_token:
-            raise HTTPException(status_code=400, detail="Missing push_token")
-            
-        if push_token not in active_activities:
+        if update.push_token not in active_activities:
             logger.error(f"Token not found. Available tokens: {active_activities}")
             raise HTTPException(status_code=400, detail="Token not found")
-        
-        # Process update
-        active_activities[push_token] = data
+            
+        # Store the update
+        active_activities[update.push_token] = update.dict()
+        logger.info(f"Update stored successfully")
         return {"status": "Update processed"}
     except Exception as e:
-        logger.error(f"Error in update_train_activity: {str(e)}")
+        logger.error(f"Error processing update: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/end-train-activity")
@@ -214,6 +204,11 @@ async def debug_endpoint(data: dict):
     """Debug endpoint to log incoming data"""
     print(f"Received data at debug endpoint: {json.dumps(data, indent=2)}")
     return {"status": "received", "data": data}
+
+@app.get("/debug/tokens")
+async def debug_tokens():
+    """Debug endpoint to view registered tokens"""
+    return {"tokens": active_activities, "activities": active_activities}
 
 @app.on_event("startup")
 async def startup_event():
