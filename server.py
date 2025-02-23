@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import jwt
 import time
@@ -8,8 +8,13 @@ from typing import Optional, Dict
 import asyncio
 from datetime import datetime, timedelta
 import os
+import logging
 
 app = FastAPI()
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Your existing configuration stays the same
 TEAM_ID = "7QM8T4XA98"
@@ -17,7 +22,7 @@ KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
 AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"  # Updated to match Render's path
 APNS_HOST = "api.sandbox.push.apple.com"
-APNS_PORT = 80
+APNS_PORT = 443
 
 # Store active sessions
 active_activities: Dict[str, dict] = {}
@@ -133,49 +138,46 @@ async def periodic_updates():
         await asyncio.sleep(30)  # Increased to 30 seconds to reduce server load
 
 @app.post("/register-token")
-async def register_token(registration: TokenRegistration):
-    """Register a push token for a train"""
-    print(f"Registering token for train {registration.train_id}: {registration.push_token}")
+async def register_token(request: Request):
     try:
-        active_activities[registration.push_token] = {
-            "train_id": registration.train_id,
-            "push_token": registration.push_token
+        data = await request.json()
+        logger.info(f"Received registration request: {data}")
+        
+        train_id = data.get("train_id")
+        push_token = data.get("push_token")
+        
+        if not train_id or not push_token:
+            raise HTTPException(status_code=400, detail="Missing train_id or push_token")
+            
+        active_activities[push_token] = {
+            "train_id": train_id,
+            "push_token": push_token
         }
+        logger.info(f"Registered token. Current tokens: {active_activities}")
         return {"status": "Token registered"}
     except Exception as e:
-        print(f"Error registering token: {str(e)}")
+        logger.error(f"Error in register_token: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/update-train-activity")
-async def update_train_activity(update: TrainUpdate):
-    """Endpoint to send Live Activity updates for train status"""
-    print(f"Received update request for token: {update.push_token}")
-    print(f"Raw update data: {update.dict()}")
-    
+async def update_train_activity(request: Request):
     try:
-        # Convert millisecond timestamps to seconds
-        update_dict = update.dict(exclude={'push_token'})
-        for key in ['orarioUltimoRilevamento', 'orarioPartenza', 'orarioArrivo']:
-            if key in update_dict and update_dict[key]:
-                update_dict[key] = update_dict[key] // 1000
+        data = await request.json()
+        logger.info(f"Received update request: {data}")
         
-        # Store the converted data
-        active_activities[update.push_token] = update_dict
+        push_token = data.get("push_token")
+        if not push_token:
+            raise HTTPException(status_code=400, detail="Missing push_token")
+            
+        if push_token not in active_activities:
+            logger.error(f"Token not found. Available tokens: {active_activities}")
+            raise HTTPException(status_code=400, detail="Token not found")
         
-        payload = {
-            "aps": {
-                "timestamp": int(time.time()),
-                "event": "update",
-                "content-state": update_dict
-            }
-        }
-        
-        print(f"Formatted payload: {json.dumps(payload, indent=2)}")
-        return await send_push_notification(update.push_token, payload)
+        # Process update
+        active_activities[push_token] = data
+        return {"status": "Update processed"}
     except Exception as e:
-        import traceback
-        print(f"Error in update_train_activity: {str(e)}")
-        print(f"Stack trace: {traceback.format_exc()}")
+        logger.error(f"Error in update_train_activity: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/end-train-activity")
