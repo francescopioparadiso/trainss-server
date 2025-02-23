@@ -4,18 +4,20 @@ import jwt
 import time
 import json
 import httpx
-from typing import Dict
+from typing import Optional, Dict
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 app = FastAPI()
 
-# Configuration
+# Your existing configuration stays the same
 TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
+AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"  # Updated to match Render's path
 APNS_HOST = "api.sandbox.push.apple.com"
+APNS_PORT = 443
 
 # Store active sessions
 active_activities: Dict[str, dict] = {}
@@ -64,13 +66,12 @@ async def send_push_notification(token: str, payload: dict):
         'apns-push-type': 'liveactivity',
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
-        'apns-priority': '10'
+        'apns-priority': '5'
     }
 
     url = f'https://{APNS_HOST}/3/device/{token}'
     print(f"Sending push notification to: {url}")
-    print(f"Headers: {json.dumps(headers, indent=2)}")
-    print(f"Payload: {json.dumps(payload, indent=2)}")
+    print(f"Payload: {payload}")
     
     async with httpx.AsyncClient(verify=True) as client:
         try:
@@ -78,17 +79,16 @@ async def send_push_notification(token: str, payload: dict):
                 url, 
                 json=payload, 
                 headers=headers,
-                timeout=30.0
+                timeout=30.0  # Add timeout
             )
             print(f"APNs response status: {response.status_code}")
             if response.status_code == 200:
                 return {"status": "success"}
             else:
-                error_text = response.text
-                print(f"APNs error response: {error_text}")
+                print(f"APNs error response: {response.text}")
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"APNs error: {error_text}"
+                    detail=f"APNs error: {response.text}"
                 )
         except httpx.RequestError as e:
             print(f"HTTP Request error: {str(e)}")
@@ -98,39 +98,45 @@ async def send_push_notification(token: str, payload: dict):
             raise HTTPException(status_code=500, detail=str(e))
 
 async def periodic_updates():
-    """Send updates every 10 seconds to all active live activities."""
+    """Send updates every 30 seconds to all active live activities."""
     while True:
         print(f"Running periodic updates for {len(active_activities)} activities")
-        current_time = int(time.time())
-        
         for token, data in active_activities.items():
             try:
                 payload = {
                     "aps": {
-                        "timestamp": current_time,
+                        "timestamp": int(time.time()),
                         "event": "update",
-                        "content-state": data
+                        "content-state": data,
+                        "alert": {
+                            "title": "Train Update",
+                            "body": f"Delay: {data['ritardo']} minutes"
+                        }
                     }
                 }
                 await send_push_notification(token, payload)
             except Exception as e:
                 print(f"Error sending update to {token}: {str(e)}")
         
-        await asyncio.sleep(10)
+        await asyncio.sleep(30)  # Increased to 30 seconds to reduce server load
 
 @app.post("/update-train-activity")
 async def update_train_activity(update: TrainUpdate):
     """Endpoint to send Live Activity updates for train status"""
     print(f"Received update request for token: {update.push_token}")
+    print(f"Raw update data: {update.dict()}")  # Log raw data
     
     try:
+        # Convert millisecond timestamps to seconds
         update_dict = update.dict(exclude={'push_token'})
         for key in ['orarioUltimoRilevamento', 'orarioPartenza', 'orarioArrivo']:
             if key in update_dict and update_dict[key]:
                 update_dict[key] = update_dict[key] // 1000
         
+        # Store the converted data
         active_activities[update.push_token] = update_dict
         
+        # Create payload without alert section
         payload = {
             "aps": {
                 "timestamp": int(time.time()),
@@ -139,31 +145,32 @@ async def update_train_activity(update: TrainUpdate):
             }
         }
         
-        print(f"Formatted payload: {json.dumps(payload, indent=2)}")
+        print(f"Formatted payload: {json.dumps(payload, indent=2)}")  # Log formatted payload
         return await send_push_notification(update.push_token, payload)
     except Exception as e:
         print(f"Error in update_train_activity: {str(e)}")
+        print(f"Stack trace: ", exc_info=True)  # Add stack trace
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/end-train-activity")
 async def end_train_activity(update: TrainUpdate):
     """Endpoint to end a Live Activity"""
-    try:
-        if update.push_token in active_activities:
-            del active_activities[update.push_token]
-        
-        payload = {
-            "aps": {
-                "timestamp": int(time.time()),
-                "event": "end",
-                "content-state": update.dict(exclude={'push_token'})
+    if update.push_token in active_activities:
+        del active_activities[update.push_token]
+
+    payload = {
+        "aps": {
+            "timestamp": int(time.time()),
+            "event": "end",
+            "content-state": update.dict(exclude={'push_token'}),
+            "alert": {
+                "title": "Journey Completed",
+                "body": "Train has reached its destination"
             }
         }
+    }
 
-        return await send_push_notification(update.push_token, payload)
-    except Exception as e:
-        print(f"Error in end_train_activity: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return await send_push_notification(update.push_token, payload)
 
 @app.get("/health")
 async def health_check():
