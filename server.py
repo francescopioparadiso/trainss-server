@@ -69,11 +69,7 @@ async def periodic_updates():
                     "aps": {
                         "timestamp": current_time,
                         "event": "update",
-                        "content-state": data,
-                        "alert": {
-                            "title": "Train Update",
-                            "body": f"Delay: {data['ritardo']} minutes"
-                        }
+                        "content-state": data
                     }
                 }
                 await send_push_notification(token, payload)
