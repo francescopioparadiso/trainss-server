@@ -48,6 +48,10 @@ class TrainUpdate(BaseModel):
     orarioPartenza: int
     stazioneArrivo: str
     orarioArrivo: int
+    train_id: str
+    seat: Optional[str]
+    dataPartenza: int
+    dataArrivo: int
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
@@ -78,6 +82,7 @@ async def send_push_notification(token: str, payload: dict):
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
         'apns-priority': '10',
+        'apns-push-type': 'alert',
         'content-type': 'application/json'
     }
     
@@ -159,16 +164,21 @@ async def update_train_activity(update: TrainUpdate):
             logger.error(f"Token not found. Available tokens: {tokens}")
             raise HTTPException(status_code=400, detail="Token not found")
             
-        # Store the update
+        # Store the update with all fields
         active_activities[update.push_token] = update.dict()
-        logger.info(f"Update stored successfully")
         
-        # Create payload for APNs
+        # Create payload for APNs with proper alert structure
         payload = {
             "aps": {
                 "timestamp": int(time.time()),
                 "event": "update",
-                "content-state": update.dict(exclude={'push_token'})
+                "content-state": update.dict(exclude={'push_token'}),
+                "alert": {
+                    "title": "Train Update",
+                    "body": f"Train {update.train_id} - Delay: {update.ritardo} minutes",
+                    "sound": "default"
+                },
+                "interruption-level": "time-sensitive"
             }
         }
         
