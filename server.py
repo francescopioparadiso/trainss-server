@@ -66,12 +66,14 @@ async def send_push_notification(token: str, payload: dict):
         'apns-push-type': 'liveactivity',
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
-        'apns-priority': '5'
+        'apns-priority': '10',
+        'content-type': 'application/json'  # Add content-type header
     }
 
     url = f'https://{APNS_HOST}/3/device/{token}'
     print(f"Sending push notification to: {url}")
-    print(f"Payload: {payload}")
+    print(f"Headers: {json.dumps(headers, indent=2)}")
+    print(f"Payload: {json.dumps(payload, indent=2)}")
     
     async with httpx.AsyncClient(verify=True) as client:
         try:
@@ -79,22 +81,27 @@ async def send_push_notification(token: str, payload: dict):
                 url, 
                 json=payload, 
                 headers=headers,
-                timeout=30.0  # Add timeout
+                timeout=30.0
             )
             print(f"APNs response status: {response.status_code}")
             if response.status_code == 200:
                 return {"status": "success"}
             else:
-                print(f"APNs error response: {response.text}")
+                error_text = response.text
+                print(f"APNs error response: {error_text}")
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"APNs error: {response.text}"
+                    detail=f"APNs error: {error_text}"
                 )
         except httpx.RequestError as e:
             print(f"HTTP Request error: {str(e)}")
+            import traceback
+            print(f"Full error trace: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Request error: {str(e)}")
         except Exception as e:
             print(f"Error sending push notification: {str(e)}")
+            import traceback
+            print(f"Full error trace: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=str(e))
 
 async def periodic_updates():
@@ -124,7 +131,7 @@ async def periodic_updates():
 async def update_train_activity(update: TrainUpdate):
     """Endpoint to send Live Activity updates for train status"""
     print(f"Received update request for token: {update.push_token}")
-    print(f"Raw update data: {update.dict()}")  # Log raw data
+    print(f"Raw update data: {update.dict()}")
     
     try:
         # Convert millisecond timestamps to seconds
@@ -136,7 +143,6 @@ async def update_train_activity(update: TrainUpdate):
         # Store the converted data
         active_activities[update.push_token] = update_dict
         
-        # Create payload without alert section
         payload = {
             "aps": {
                 "timestamp": int(time.time()),
@@ -145,11 +151,23 @@ async def update_train_activity(update: TrainUpdate):
             }
         }
         
-        print(f"Formatted payload: {json.dumps(payload, indent=2)}")  # Log formatted payload
+        print(f"Formatted payload: {json.dumps(payload, indent=2)}")
+        
+        # Add headers logging before sending
+        headers = {
+            'authorization': 'bearer <token>',  # Token will be added in send_push_notification
+            'apns-push-type': 'liveactivity',
+            'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
+            'apns-expiration': '0',
+            'apns-priority': '10'
+        }
+        print(f"Headers being sent: {json.dumps(headers, indent=2)}")
+        
         return await send_push_notification(update.push_token, payload)
     except Exception as e:
+        import traceback
         print(f"Error in update_train_activity: {str(e)}")
-        print(f"Stack trace: ", exc_info=True)  # Add stack trace
+        print(f"Stack trace: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/end-train-activity")
