@@ -16,7 +16,7 @@ TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
 AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"
-APNS_HOST = "api.development.push.apple.com"  # Use this for development
+APNS_HOST = "api.push.apple.com"
 APNS_PORT = 443
 
 # Store both active activities and train-token mappings
@@ -69,7 +69,11 @@ async def periodic_updates():
                     "aps": {
                         "timestamp": current_time,
                         "event": "update",
-                        "content-state": data
+                        "content-state": data,
+                        "alert": {
+                            "title": "Train Update",
+                            "body": f"Delay: {data['ritardo']} minutes"
+                        }
                     }
                 }
                 await send_push_notification(token, payload)
@@ -104,11 +108,11 @@ async def send_push_notification(token: str, payload: dict):
     jwt_token = await create_token()
     
     headers = {
-        'authorization': f'bearer {jwt_token}',
-        'apns-push-type': 'liveactivity',
-        'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
-        'apns-expiration': '0',
-        'apns-priority': '10',  # Changed to high priority (10)
+        "Authorization": f"Bearer {jwt_token}",
+        "apns-push-type": "liveactivity",
+        "apns-topic": f"{BUNDLE_ID}.push-type.liveactivity",
+        "apns-expiration": "0",
+        "apns-priority": "10",
     }
 
     url = f'https://{APNS_HOST}/3/device/{token}'
