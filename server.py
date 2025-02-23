@@ -78,41 +78,39 @@ async def send_push_notification(token: str, payload: dict):
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
         'apns-priority': '10',
-        'content-type': 'application/json'  # Add content-type header
+        'content-type': 'application/json'
     }
-
+    
     url = f'https://{APNS_HOST}/3/device/{token}'
-    print(f"Sending push notification to: {url}")
-    print(f"Headers: {json.dumps(headers, indent=2)}")
-    print(f"Payload: {json.dumps(payload, indent=2)}")
+    
+    logger.info(f"Sending push notification to: {url}")
+    logger.info(f"Headers: {headers}")
+    logger.info(f"Payload: {payload}")
     
     async with httpx.AsyncClient(verify=True) as client:
         try:
             response = await client.post(
-                url, 
-                json=payload, 
+                url=url,
+                json=payload,
                 headers=headers,
                 timeout=30.0
             )
-            print(f"APNs response status: {response.status_code}")
+            
+            logger.info(f"APNs response status: {response.status_code}")
             if response.status_code == 200:
                 return {"status": "success"}
             else:
                 error_text = response.text
-                print(f"APNs error response: {error_text}")
+                logger.error(f"APNs error response: {error_text}")
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=f"APNs error: {error_text}"
                 )
         except httpx.RequestError as e:
-            print(f"HTTP Request error: {str(e)}")
-            import traceback
-            print(f"Full error trace: {traceback.format_exc()}")
+            logger.error(f"HTTP Request error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Request error: {str(e)}")
         except Exception as e:
-            print(f"Error sending push notification: {str(e)}")
-            import traceback
-            print(f"Full error trace: {traceback.format_exc()}")
+            logger.error(f"Error sending push notification: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
 async def periodic_updates():
