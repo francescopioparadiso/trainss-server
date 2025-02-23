@@ -193,11 +193,7 @@ async def end_train_activity(update: TrainUpdate):
             "aps": {
                 "timestamp": int(time.time()),
                 "event": "end",
-                "content-state": update.dict(exclude={'push_token'}),
-                "alert": {
-                    "title": "Journey Completed",
-                    "body": "Train has reached its destination"
-                }
+                "content-state": update.dict(exclude={'push_token'})
             }
         }
 
