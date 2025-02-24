@@ -1,37 +1,27 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import jwt
 import time
 import json
 import httpx
-from typing import Optional, Dict
+from typing import Dict
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import logging
 
 app = FastAPI()
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Your existing configuration stays the same
+# Configuration
 TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
-AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"  # Updated to match Render's path
 APNS_HOST = "api.sandbox.push.apple.com"
-APNS_PORT = 443
 
-# Store tokens and activities
-tokens = {}
-active_activities = {}
+# Store active sessions
+active_activities: Dict[str, dict] = {}
 
-# Pydantic models for request validation
-class TokenRegistration(BaseModel):
-    train_id: str
-    push_token: str
+logger = logging.getLogger(__name__)
 
 class TrainUpdate(BaseModel):
     push_token: str
@@ -48,10 +38,6 @@ class TrainUpdate(BaseModel):
     orarioPartenza: int
     stazioneArrivo: str
     orarioArrivo: int
-    train_id: str
-    seat: Optional[str]
-    dataPartenza: int
-    dataArrivo: int
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
@@ -82,7 +68,6 @@ async def send_push_notification(token: str, payload: dict):
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
         'apns-priority': '10',
-        'apns-push-type': 'alert',
         'content-type': 'application/json'
     }
     
@@ -119,40 +104,25 @@ async def send_push_notification(token: str, payload: dict):
             raise HTTPException(status_code=500, detail=str(e))
 
 async def periodic_updates():
-    """Send updates every 30 seconds to all active live activities."""
+    """Send updates every 10 seconds to all active live activities."""
     while True:
         print(f"Running periodic updates for {len(active_activities)} activities")
+        current_time = int(time.time())
+        
         for token, data in active_activities.items():
             try:
                 payload = {
                     "aps": {
-                        "timestamp": int(time.time()),
+                        "timestamp": current_time,
                         "event": "update",
-                        "content-state": data,
-                        "alert": {
-                            "title": "Train Update",
-                            "body": f"Delay: {data['ritardo']} minutes"
-                        }
+                        "content-state": data
                     }
                 }
                 await send_push_notification(token, payload)
             except Exception as e:
                 print(f"Error sending update to {token}: {str(e)}")
         
-        await asyncio.sleep(30)  # Increased to 30 seconds to reduce server load
-
-@app.post("/register-token")
-async def register_token(registration: TokenRegistration):
-    """Register a push token for a train"""
-    try:
-        logger.info(f"Registering token for train {registration.train_id}")
-        tokens[registration.push_token] = registration.train_id
-        active_activities[registration.push_token] = {}
-        logger.info(f"Current tokens: {tokens}")
-        return {"status": "Token registered"}
-    except Exception as e:
-        logger.error(f"Error registering token: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        await asyncio.sleep(10)
 
 @app.post("/update-train-activity")
 async def update_train_activity(update: TrainUpdate):
@@ -160,14 +130,14 @@ async def update_train_activity(update: TrainUpdate):
     try:
         logger.info(f"Received update for token: {update.push_token}")
         
-        if update.push_token not in tokens:
-            logger.error(f"Token not found. Available tokens: {tokens}")
+        if update.push_token not in active_activities:
+            logger.error(f"Token not found. Available tokens: {list(active_activities.keys())}")
             raise HTTPException(status_code=400, detail="Token not found")
             
         # Store the update with all fields
         active_activities[update.push_token] = update.dict()
         
-        # Create payload for APNs with proper alert structure
+        # Create payload for APNs with proper Live Activity structure
         payload = {
             "aps": {
                 "timestamp": int(time.time()),
@@ -175,10 +145,12 @@ async def update_train_activity(update: TrainUpdate):
                 "content-state": update.dict(exclude={'push_token'}),
                 "alert": {
                     "title": "Train Update",
-                    "body": f"Train {update.train_id} - Delay: {update.ritardo} minutes",
+                    "body": f"Train {update.push_token} - Delay: {update.ritardo} minutes",
                     "sound": "default"
                 },
-                "interruption-level": "time-sensitive"
+                "interruption-level": "time-sensitive",
+                "relevance-score": 1.0,
+                "content-available": 1
             }
         }
         
@@ -209,23 +181,11 @@ async def end_train_activity(update: TrainUpdate):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
     return {
-        "status": "healthy",
-        "timestamp": int(time.time()),
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
         "active_activities": len(active_activities)
     }
-
-@app.post("/debug")
-async def debug_endpoint(data: dict):
-    """Debug endpoint to log incoming data"""
-    print(f"Received data at debug endpoint: {json.dumps(data, indent=2)}")
-    return {"status": "received", "data": data}
-
-@app.get("/debug/tokens")
-async def debug_tokens():
-    """Debug endpoint to view registered tokens"""
-    return {"tokens": tokens, "activities": active_activities}
 
 @app.on_event("startup")
 async def startup_event():
