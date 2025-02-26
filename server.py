@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime, timedelta
 import os
 import logging
+import base64
 
 app = FastAPI()
 
@@ -20,7 +21,6 @@ logger = logging.getLogger(__name__)
 TEAM_ID = "7QM8T4XA98"
 KEY_ID = "54QRS283BA"
 BUNDLE_ID = "francescoparadis.Trainss"
-AUTH_KEY_PATH = "AuthKey_54QRS283BA.p8"  # Updated to match Render's path
 APNS_HOST = "api.sandbox.push.apple.com"
 APNS_PORT = 443
 
@@ -58,19 +58,27 @@ async def create_token():
     auth_key = os.environ.get('APNS_AUTH_KEY')
     if not auth_key:
         raise HTTPException(status_code=500, detail="APNS authentication key not found")
-
-    token = jwt.encode(
-        {
-            'iss': TEAM_ID,
-            'iat': time.time()
-        },
-        auth_key,
-        algorithm='ES256',
-        headers={
-            'kid': KEY_ID
-        }
-    )
-    return token
+    
+    try:
+        # Decode base64 key
+        key_data = base64.b64decode(auth_key)
+        
+        token = jwt.encode(
+            {
+                'iss': TEAM_ID,
+                'iat': time.time()
+            },
+            key_data,
+            algorithm='ES256',
+            headers={
+                'kid': KEY_ID,
+                'typ': 'JWT'
+            }
+        )
+        return token
+    except Exception as e:
+        logger.error(f"Error creating JWT token: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating JWT token: {str(e)}")
 
 async def send_push_notification(token: str, payload: dict):
     """Send push notification to APNs."""
@@ -82,7 +90,6 @@ async def send_push_notification(token: str, payload: dict):
         'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
         'apns-expiration': '0',
         'apns-priority': '10',
-        'apns-push-type': 'alert',
         'content-type': 'application/json'
     }
     
@@ -131,7 +138,7 @@ async def periodic_updates():
                         "content-state": data,
                         "alert": {
                             "title": "Train Update",
-                            "body": f"Delay: {data['ritardo']} minutes"
+                            "body": f"Delay: {data.get('ritardo', 0)} minutes"
                         }
                     }
                 }
@@ -165,20 +172,20 @@ async def update_train_activity(update: TrainUpdate):
             raise HTTPException(status_code=400, detail="Token not found")
             
         # Store the update with all fields
-        active_activities[update.push_token] = update.dict()
+        update_dict = update.dict()
+        active_activities[update.push_token] = update_dict
         
         # Create payload for APNs with proper alert structure
         payload = {
             "aps": {
                 "timestamp": int(time.time()),
                 "event": "update",
-                "content-state": update.dict(exclude={'push_token'}),
+                "content-state": update_dict,
                 "alert": {
                     "title": "Train Update",
                     "body": f"Train {update.train_id} - Delay: {update.ritardo} minutes",
                     "sound": "default"
-                },
-                "interruption-level": "time-sensitive"
+                }
             }
         }
         
@@ -197,7 +204,7 @@ async def end_train_activity(update: TrainUpdate):
         "aps": {
             "timestamp": int(time.time()),
             "event": "end",
-            "content-state": update.dict(exclude={'push_token'}),
+            "content-state": update.dict(),
             "alert": {
                 "title": "Journey Completed",
                 "body": "Train has reached its destination"
