@@ -97,7 +97,7 @@ async def send_push_notification(token: str, payload: dict):
     
     logger.info(f"Sending push notification to: {url}")
     logger.info(f"Headers: {headers}")
-    logger.info(f"Payload: {payload}")
+    logger.info(f"Payload: {json.dumps(payload, indent=2)}")
     
     async with httpx.AsyncClient(verify=True) as client:
         try:
@@ -140,15 +140,15 @@ async def periodic_updates():
                 if 'push_token' in content_state:
                     del content_state['push_token']
                 
+                current_time = int(time.time())
                 payload = {
                     "aps": {
-                        "timestamp": int(time.time()),
+                        "timestamp": current_time,
                         "event": "update",
                         "content-state": content_state,
-                        "alert": {
-                            "title": "Train Update",
-                            "body": f"Train {data.get('train_id', '')} - Delay: {data.get('ritardo', 0)} minutes"
-                        }
+                        "relevance-score": 1.0,
+                        "stale-date": current_time + 1800,  # 30 minutes from now
+                        "dismissal-date": current_time + 3600  # 1 hour from now
                     }
                 }
                 
@@ -192,17 +192,16 @@ async def update_train_activity(update: TrainUpdate):
         if 'push_token' in content_state:
             del content_state['push_token']
         
-        # Create payload for APNs with proper alert structure
+        # Create payload for APNs
+        current_time = int(time.time())
         payload = {
             "aps": {
-                "timestamp": int(time.time()),
+                "timestamp": current_time,
                 "event": "update",
                 "content-state": content_state,
-                "alert": {
-                    "title": "Train Update",
-                    "body": f"Train {update.train_id} - Delay: {update.ritardo} minutes",
-                    "sound": "default"
-                }
+                "relevance-score": 1.0,
+                "stale-date": current_time + 1800,  # 30 minutes from now
+                "dismissal-date": current_time + 3600  # 1 hour from now
             }
         }
         
@@ -217,15 +216,18 @@ async def end_train_activity(update: TrainUpdate):
     if update.push_token in active_activities:
         del active_activities[update.push_token]
 
+    # Create a clean payload without the push_token
+    content_state = update.dict()
+    if 'push_token' in content_state:
+        del content_state['push_token']
+
+    current_time = int(time.time())
     payload = {
         "aps": {
-            "timestamp": int(time.time()),
+            "timestamp": current_time,
             "event": "end",
-            "content-state": update.dict(),
-            "alert": {
-                "title": "Journey Completed",
-                "body": "Train has reached its destination"
-            }
+            "content-state": content_state,
+            "dismissal-date": current_time  # End immediately
         }
     }
 
