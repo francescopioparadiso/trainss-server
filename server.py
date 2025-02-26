@@ -131,20 +131,31 @@ async def periodic_updates():
         print(f"Running periodic updates for {len(active_activities)} activities")
         for token, data in active_activities.items():
             try:
+                if not data:  # Skip if no data is available
+                    print(f"No data available for token {token}")
+                    continue
+                    
+                # Create a clean payload without the push_token
+                content_state = data.copy()
+                if 'push_token' in content_state:
+                    del content_state['push_token']
+                
                 payload = {
                     "aps": {
                         "timestamp": int(time.time()),
                         "event": "update",
-                        "content-state": data,
+                        "content-state": content_state,
                         "alert": {
                             "title": "Train Update",
-                            "body": f"Delay: {data.get('ritardo', 0)} minutes"
+                            "body": f"Train {data.get('train_id', '')} - Delay: {data.get('ritardo', 0)} minutes"
                         }
                     }
                 }
+                
+                logger.info(f"Periodic update payload for token {token}: {json.dumps(payload, indent=2)}")
                 await send_push_notification(token, payload)
             except Exception as e:
-                print(f"Error sending update to {token}: {str(e)}")
+                logger.error(f"Error sending update to {token}: {str(e)}")
         
         await asyncio.sleep(30)  # Increased to 30 seconds to reduce server load
 
@@ -174,13 +185,19 @@ async def update_train_activity(update: TrainUpdate):
         # Store the update with all fields
         update_dict = update.dict()
         active_activities[update.push_token] = update_dict
+        logger.info(f"Updated active_activities for token {update.push_token}: {json.dumps(update_dict, indent=2)}")
+        
+        # Create a clean payload without the push_token
+        content_state = update_dict.copy()
+        if 'push_token' in content_state:
+            del content_state['push_token']
         
         # Create payload for APNs with proper alert structure
         payload = {
             "aps": {
                 "timestamp": int(time.time()),
                 "event": "update",
-                "content-state": update_dict,
+                "content-state": content_state,
                 "alert": {
                     "title": "Train Update",
                     "body": f"Train {update.train_id} - Delay: {update.ritardo} minutes",
