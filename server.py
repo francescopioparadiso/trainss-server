@@ -101,13 +101,15 @@ async def send_push_notification(token: str, payload: dict):
     
     async with httpx.AsyncClient(verify=True) as client:
         try:
+            logger.info(f"Sending push notification to: {url}")
+            
             response = await client.post(
                 url=url,
                 json=payload,
                 headers=headers,
                 timeout=30.0
             )
-            
+
             logger.info(f"APNs response status: {response.status_code}")
             if response.status_code == 200:
                 return {"status": "success"}
