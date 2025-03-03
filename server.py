@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 import os
 import logging
 import base64
-import copy
 
 app = FastAPI()
 
@@ -139,7 +138,7 @@ async def periodic_updates():
                     continue
                     
                 # Create a clean payload without the push_token
-                content_state = data.deeepcopy()
+                content_state = data.copy()
                 if 'push_token' in content_state:
                     del content_state['push_token']
                 
@@ -161,7 +160,6 @@ async def periodic_updates():
                 logger.error(f"Error sending update to {token}: {str(e)}")
         
         await asyncio.sleep(10)
-        logger.info(f"Current state of active_activities: {json.dumps(active_activities, indent=2)}")
 
 @app.post("/register-token")
 async def register_token(registration: TokenRegistration):
