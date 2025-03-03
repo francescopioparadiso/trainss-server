@@ -99,7 +99,7 @@ async def send_push_notification(token: str, payload: dict):
     logger.info(f"Headers: {headers}")
     logger.info(f"Payload: {json.dumps(payload, indent=2)}")
     
-    async with httpx.AsyncClient(verify=True) as client:
+    async with httpx.AsyncClient(http2=True, verify=True) as client:
         try:
             logger.info(f"Sending push notification to: {url}")
             
