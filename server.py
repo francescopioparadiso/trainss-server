@@ -10,8 +10,53 @@ from datetime import datetime, timedelta
 import os
 import logging
 import base64
+import requests
+from datetime import datetime
 
 app = FastAPI()
+
+# trenitalia functions
+def fetch_train_info(train_number):
+    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
+    timestamp = int(datetime.now().timestamp() * 1000)
+    response = requests.get(url)
+    data = response.text.strip().split("|")
+    station_code = data[1].split("-")[1]
+
+    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/{station_code}/{train_number}/{timestamp}"
+    response = requests.get(url)
+    train_data = response.json()
+    return train_data
+
+def fetch_parameter(parameter, train_number):
+    train_data = fetch_train_info(train_number)
+    for v in train_data:
+        if v == parameter:
+            return train_data[v]
+
+def fetch_fermate_info(train_number):
+    fermate_database = fetch_parameter("fermate", train_number)
+    fermate_list = []
+    orari_list = []
+    for i, dictionary in enumerate(fermate_database):
+        if i == 0:
+            for ii,v in enumerate(dictionary):
+                if ii == 2:
+                    fermate_list.append(dictionary[v])
+                if ii == 11:
+                    orari_list.append(dictionary[v])
+        else:
+            for ii,v in enumerate(dictionary):
+                if ii == 2:
+                    fermate_list.append(dictionary[v])
+                if ii == 12:
+                    orari_list.append(dictionary[v])
+    fermate_dict = {}
+    for i,ferm in enumerate(fermate_list):
+        for ii,orar in enumerate(orari_list):
+            if i==ii:
+                fermate_dict[ferm] = orar
+    return fermate_dict
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -186,6 +231,7 @@ async def update_train_activity(update: TrainUpdate):
             
         # Store the update with all fields
         update_dict = update.dict()
+        update_dict["stazioneUltimoRilevamento"] = fetch_parameter("stazioneUltimoRilevamento",8810)
         active_activities[update.push_token] = update_dict
         logger.info(f"Updated active_activities for token {update.push_token}: {json.dumps(update_dict, indent=2)}")
         
