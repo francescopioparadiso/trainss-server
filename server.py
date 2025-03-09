@@ -14,15 +14,20 @@ import base64
 app = FastAPI()
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+logger.info(f"Starting server with log level: {log_level}")
 
 # Your existing configuration stays the same
-TEAM_ID = "7QM8T4XA98"
-KEY_ID = "54QRS283BA"
-BUNDLE_ID = "francescoparadis.Trainss"
-APNS_HOST = "api.sandbox.push.apple.com"
-APNS_PORT = 443
+TEAM_ID = os.environ.get("TEAM_ID", "7QM8T4XA98")
+KEY_ID = os.environ.get("KEY_ID", "54QRS283BA")
+BUNDLE_ID = os.environ.get("BUNDLE_ID", "francescoparadis.Trainss")
+APNS_HOST = os.environ.get("APNS_HOST", "api.sandbox.push.apple.com")
+APNS_PORT = int(os.environ.get("APNS_PORT", "443"))
 
 # Store tokens and activities
 tokens = {}
@@ -298,6 +303,17 @@ async def debug_jwt():
 @app.on_event("startup")
 async def startup_event():
     """Start the periodic update task when the server starts"""
+    # Check if APNS_AUTH_KEY is set
+    if not os.environ.get('APNS_AUTH_KEY'):
+        logger.warning("APNS_AUTH_KEY environment variable is not set. Push notifications will not work!")
+    else:
+        logger.info("APNS_AUTH_KEY environment variable is set.")
+    
+    # Log configuration
+    logger.info(f"Server configuration: TEAM_ID={TEAM_ID}, KEY_ID={KEY_ID}, BUNDLE_ID={BUNDLE_ID}")
+    logger.info(f"APNs Host: {APNS_HOST}:{APNS_PORT}")
+    
+    # Start periodic updates
     asyncio.create_task(periodic_updates())
 
 if __name__ == "__main__":
