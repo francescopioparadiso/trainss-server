@@ -78,7 +78,7 @@ class TrainUpdate(BaseModel):
     seat: Optional[str]
     dataPartenza: int
     dataArrivo: int
-    numeroTreno: str
+    numeroTreno: Optional[str] = None  # Make it optional with default None
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
@@ -230,8 +230,74 @@ async def update_train_activity(update: TrainUpdate):
             
         # Store the update with all fields
         update_dict = update.dict()
+        
+        # If numeroTreno is provided, try to fetch real-time data from Trenitalia API
+        if update.numeroTreno:
+            try:
+                logger.info(f"Fetching real-time data for train {update.numeroTreno}")
+                train_data = trenitalia.fetch_train_info(update.numeroTreno)
+                
+                # Update with real data if available
+                if 'stazioneUltimoRilevamento' in train_data:
+                    update_dict['stazioneUltimoRilevamento'] = train_data['stazioneUltimoRilevamento']
+                
+                if 'ultimoRilev' in train_data:
+                    update_dict['orarioUltimoRilevamento'] = train_data['ultimoRilev']
+                
+                if 'ritardo' in train_data:
+                    update_dict['ritardo'] = train_data['ritardo']
+                
+                if 'origine' in train_data and not update_dict.get('stazionePartenza'):
+                    update_dict['stazionePartenza'] = train_data['origine']
+                
+                if 'orarioPartenza' in train_data and not update_dict.get('orarioPartenza'):
+                    update_dict['orarioPartenza'] = train_data['orarioPartenza']
+                
+                if 'destinazione' in train_data and not update_dict.get('stazioneArrivo'):
+                    update_dict['stazioneArrivo'] = train_data['destinazione']
+                
+                if 'orarioArrivo' in train_data and not update_dict.get('orarioArrivo'):
+                    update_dict['orarioArrivo'] = train_data['orarioArrivo']
+                
+                if 'subTitle' in train_data:
+                    update_dict['problemi'] = train_data['subTitle']
+                
+                # Find next station
+                if 'fermate' in train_data:
+                    next_station = None
+                    current_time = int(datetime.now().timestamp() * 1000)
+                    
+                    for fermata in train_data['fermate']:
+                        if fermata.get('partenzaReale', 0) == 0 and fermata.get('partenzaTeorica', 0) > current_time:
+                            next_station = fermata
+                            break
+                    
+                    if next_station:
+                        tempo_prossima_stazione = max(0, int((next_station['partenzaTeorica'] - current_time) / 1000))
+                        update_dict['tempoProssimaStazione'] = tempo_prossima_stazione
+                        update_dict['prossimaStazione'] = next_station.get('stazione', '')
+                        update_dict['prossimoBinario'] = next_station.get('binarioProgrammatoPartenzaDescrizione', '')
+                
+                logger.info(f"Updated with real data from Trenitalia API")
+            except Exception as e:
+                logger.error(f"Error fetching data from Trenitalia API: {str(e)}")
+        else:
+            # Ensure time values are properly formatted
+            current_time = int(time.time())
+            
+            # If tempoProssimaStazione is 0 or not provided, calculate it based on arrival time
+            if update_dict.get('tempoProssimaStazione', 0) == 0 and update_dict.get('orarioArrivo', 0) > 0:
+                arrival_time = update_dict.get('orarioArrivo', 0) / 1000  # Convert from milliseconds
+                if arrival_time > current_time:
+                    update_dict['tempoProssimaStazione'] = max(0, int(arrival_time - current_time))
+            
+            # Update orarioUltimoRilevamento if not provided or too old
+            if update_dict.get('orarioUltimoRilevamento', 0) == 0:
+                update_dict['orarioUltimoRilevamento'] = current_time * 1000  # Convert to milliseconds
+        
+        # Store the updated data
         active_activities[update.push_token] = update_dict
-        logger.info(f"Updated active_activities for token {update.push_token}: {json.dumps(update_dict, indent=2)}")
+        logger.info(f"Updated active_activities for token {update.push_token}")
         
         # Create a clean payload without the push_token
         content_state = update_dict.copy()
@@ -320,6 +386,79 @@ async def debug_jwt():
         logger.error(f"Error generating JWT token: {str(e)}")
         return {"error": str(e)}
 
+@app.post("/debug/fetch-train")
+async def debug_fetch_train(data: dict):
+    """Debug endpoint to manually fetch train data from Trenitalia API"""
+    try:
+        train_number = data.get("train_number")
+        if not train_number:
+            return {"error": "train_number is required"}
+            
+        logger.info(f"Manually fetching data for train {train_number}")
+        
+        try:
+            # Fetch data from Trenitalia API
+            train_data = trenitalia.fetch_train_info(train_number)
+            
+            # Extract key information
+            result = {
+                "stazioneUltimoRilevamento": train_data.get("stazioneUltimoRilevamento", ""),
+                "orarioUltimoRilevamento": train_data.get("ultimoRilev", 0),
+                "ritardo": train_data.get("ritardo", 0),
+                "problemi": train_data.get("subTitle", ""),
+                "stazionePartenza": train_data.get("origine", ""),
+                "orarioPartenza": train_data.get("orarioPartenza", 0),
+                "stazioneArrivo": train_data.get("destinazione", ""),
+                "orarioArrivo": train_data.get("orarioArrivo", 0)
+            }
+            
+            # Find next station
+            if "fermate" in train_data:
+                next_station = None
+                current_time = int(datetime.now().timestamp() * 1000)
+                
+                for fermata in train_data["fermate"]:
+                    if fermata.get("partenzaReale", 0) == 0 and fermata.get("partenzaTeorica", 0) > current_time:
+                        next_station = fermata
+                        break
+                
+                if next_station:
+                    result["prossimaStazione"] = next_station.get("stazione", "")
+                    result["prossimoBinario"] = next_station.get("binarioProgrammatoPartenzaDescrizione", "")
+                    result["tempoProssimaStazione"] = max(0, int((next_station["partenzaTeorica"] - current_time) / 1000))
+            
+            # If a token is provided, update that token's data
+            token = data.get("push_token")
+            if token and token in active_activities:
+                logger.info(f"Updating token {token} with fetched data")
+                
+                # Update the token's data
+                for key, value in result.items():
+                    active_activities[token][key] = value
+                
+                # Send an update
+                await send_train_update(token)
+                
+                return {
+                    "status": "success",
+                    "data": result,
+                    "token_updated": True
+                }
+            
+            return {
+                "status": "success",
+                "data": result,
+                "token_updated": False
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching train data: {str(e)}")
+            return {"error": f"Error fetching train data: {str(e)}"}
+            
+    except Exception as e:
+        logger.error(f"Error in debug fetch: {str(e)}")
+        return {"error": str(e)}
+
 @app.on_event("startup")
 async def startup_event():
     """Start the periodic update task when the server starts"""
@@ -334,7 +473,8 @@ async def startup_event():
     logger.info(f"APNs Host: {APNS_HOST}:{APNS_PORT}")
     
     # Start periodic updates
-    asyncio.create_task(periodic_updates())
+    asyncio.create_task(periodic_train_updates())
+    logger.info("Started periodic train updates task")
 
 if __name__ == "__main__":
     import uvicorn
