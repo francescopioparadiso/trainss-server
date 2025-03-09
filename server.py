@@ -55,18 +55,21 @@ class TrainUpdate(BaseModel):
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
-    auth_key = os.environ.get('APNS_AUTH_KEY')
-    if not auth_key:
-        raise HTTPException(status_code=500, detail="APNS authentication key not found")
-    
     try:
-        # Decode base64 key
-        key_data = base64.b64decode(auth_key)
+        # Path to your .p8 file - you should set this up properly in your environment
+        key_file_path = os.environ.get('APNS_KEY_PATH', './AuthKey_54QRS283BA.p8')
+        
+        if not os.path.exists(key_file_path):
+            logger.error(f"Auth key file not found at: {key_file_path}")
+            raise HTTPException(status_code=500, detail="APNS authentication key file not found")
+        
+        with open(key_file_path, 'rb') as key_file:
+            key_data = key_file.read()
         
         token = jwt.encode(
             {
                 'iss': TEAM_ID,
-                'iat': time.time()
+                'iat': int(time.time())
             },
             key_data,
             algorithm='ES256',
@@ -101,8 +104,6 @@ async def send_push_notification(token: str, payload: dict):
     
     async with httpx.AsyncClient(http2=True, verify=True) as client:
         try:
-            logger.info(f"Sending push notification to: {url}")
-            
             response = await client.post(
                 url=url,
                 json=payload,
@@ -111,15 +112,18 @@ async def send_push_notification(token: str, payload: dict):
             )
 
             logger.info(f"APNs response status: {response.status_code}")
+            logger.info(f"APNs response body: {response.text}")
+            
             if response.status_code == 200:
                 return {"status": "success"}
             else:
                 error_text = response.text
                 logger.error(f"APNs error response: {error_text}")
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"APNs error: {error_text}"
-                )
+                return {
+                    "status": "error",
+                    "code": response.status_code,
+                    "detail": error_text
+                }
         except httpx.RequestError as e:
             logger.error(f"HTTP Request error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Request error: {str(e)}")
@@ -148,7 +152,7 @@ async def periodic_updates():
                         "timestamp": current_time,
                         "event": "update",
                         "content-state": content_state,
-                        "relevance-score": 1.0,
+                        "relevance-score": 100.0,
                         "stale-date": current_time + 1800,  # 30 minutes from now
                         "dismissal-date": current_time + 3600  # 1 hour from now
                     }
@@ -201,7 +205,7 @@ async def update_train_activity(update: TrainUpdate):
                 "timestamp": current_time,
                 "event": "update",
                 "content-state": content_state,
-                "relevance-score": 1.0,
+                "relevance-score": 100.0,
                 "stale-date": current_time + 1800,  # 30 minutes from now
                 "dismissal-date": current_time + 3600  # 1 hour from now
             }
