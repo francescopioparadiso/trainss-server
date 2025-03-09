@@ -473,7 +473,7 @@ async def startup_event():
     logger.info(f"APNs Host: {APNS_HOST}:{APNS_PORT}")
     
     # Start periodic updates
-    asyncio.create_task(periodic_train_updates())
+    asyncio.create_task(periodic_updates())
     logger.info("Started periodic train updates task")
 
 if __name__ == "__main__":
