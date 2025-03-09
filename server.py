@@ -56,89 +56,97 @@ class TrainUpdate(BaseModel):
 async def create_token():
     """Create a JWT token for APNs authentication."""
     try:
-        # Path to your .p8 file - you should set this up properly in your environment
-        key_file_path = os.environ.get('APNS_KEY_PATH', './AuthKey_54QRS283BA.p8')
+        # Get the base64-encoded auth key from environment variables
+        auth_key = os.environ.get('APNS_AUTH_KEY')
+        if not auth_key:
+            logger.error("APNS_AUTH_KEY environment variable not found")
+            raise HTTPException(status_code=500, detail="APNS authentication key not found")
         
-        if not os.path.exists(key_file_path):
-            logger.error(f"Auth key file not found at: {key_file_path}")
-            raise HTTPException(status_code=500, detail="APNS authentication key file not found")
-        
-        with open(key_file_path, 'rb') as key_file:
-            key_data = key_file.read()
-        
-        token = jwt.encode(
-            {
-                'iss': TEAM_ID,
-                'iat': int(time.time())
-            },
-            key_data,
-            algorithm='ES256',
-            headers={
-                'kid': KEY_ID,
-                'typ': 'JWT'
-            }
-        )
-        return token
+        try:
+            # Decode base64 key
+            key_data = base64.b64decode(auth_key)
+            
+            # Create JWT token
+            token = jwt.encode(
+                {
+                    'iss': TEAM_ID,
+                    'iat': int(time.time())
+                },
+                key_data,
+                algorithm='ES256',
+                headers={
+                    'kid': KEY_ID,
+                    'typ': 'JWT'
+                }
+            )
+            return token
+        except Exception as e:
+            logger.error(f"Error decoding key or creating JWT: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error creating JWT token: {str(e)}")
     except Exception as e:
         logger.error(f"Error creating JWT token: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating JWT token: {str(e)}")
 
 async def send_push_notification(token: str, payload: dict):
     """Send push notification to APNs."""
-    jwt_token = await create_token()
-    
-    headers = {
-        'authorization': f'bearer {jwt_token}',
-        'apns-push-type': 'liveactivity',
-        'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
-        'apns-expiration': '0',
-        'apns-priority': '10',
-        'content-type': 'application/json'
-    }
-    
-    url = f'https://{APNS_HOST}/3/device/{token}'
-    
-    logger.info(f"Sending push notification to: {url}")
-    logger.info(f"Headers: {headers}")
-    logger.info(f"Payload: {json.dumps(payload, indent=2)}")
-    
-    async with httpx.AsyncClient(http2=True, verify=True) as client:
-        try:
-            response = await client.post(
-                url=url,
-                json=payload,
-                headers=headers,
-                timeout=30.0
-            )
+    try:
+        jwt_token = await create_token()
+        
+        headers = {
+            'authorization': f'bearer {jwt_token}',
+            'apns-push-type': 'liveactivity',
+            'apns-topic': f'{BUNDLE_ID}.push-type.liveactivity',
+            'apns-expiration': '0',
+            'apns-priority': '10',
+            'content-type': 'application/json'
+        }
+        
+        url = f'https://{APNS_HOST}/3/device/{token}'
+        
+        logger.info(f"Sending push notification to: {url}")
+        logger.info(f"Headers: {headers}")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+        
+        async with httpx.AsyncClient(http2=True, verify=True) as client:
+            try:
+                response = await client.post(
+                    url=url,
+                    json=payload,
+                    headers=headers,
+                    timeout=30.0
+                )
 
-            logger.info(f"APNs response status: {response.status_code}")
-            logger.info(f"APNs response body: {response.text}")
-            
-            if response.status_code == 200:
-                return {"status": "success"}
-            else:
-                error_text = response.text
-                logger.error(f"APNs error response: {error_text}")
-                return {
-                    "status": "error",
-                    "code": response.status_code,
-                    "detail": error_text
-                }
-        except httpx.RequestError as e:
-            logger.error(f"HTTP Request error: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Request error: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error sending push notification: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
+                logger.info(f"APNs response status: {response.status_code}")
+                logger.info(f"APNs response body: {response.text}")
+                
+                if response.status_code == 200:
+                    return {"status": "success"}
+                else:
+                    error_text = response.text
+                    logger.error(f"APNs error response: {error_text}")
+                    return {
+                        "status": "error",
+                        "code": response.status_code,
+                        "detail": error_text
+                    }
+            except httpx.RequestError as e:
+                logger.error(f"HTTP Request error: {str(e)}")
+                return {"status": "error", "detail": f"Request error: {str(e)}"}
+            except Exception as e:
+                logger.error(f"Error in HTTP request: {str(e)}")
+                return {"status": "error", "detail": str(e)}
+    except Exception as e:
+        logger.error(f"Error sending push notification: {str(e)}")
+        return {"status": "error", "detail": str(e)}
 
 async def periodic_updates():
     """Send updates every 30 seconds to all active live activities."""
     while True:
-        print(f"Running periodic updates for {len(active_activities)} activities")
-        for token, data in active_activities.items():
+        logger.info(f"Running periodic updates for {len(active_activities)} activities")
+        for token, data in list(active_activities.items()):
             try:
                 if not data:  # Skip if no data is available
-                    print(f"No data available for token {token}")
+                    logger.info(f"No data available for token {token}")
                     continue
                     
                 # Create a clean payload without the push_token
@@ -159,10 +167,17 @@ async def periodic_updates():
                 }
                 
                 logger.info(f"Periodic update payload for token {token}: {json.dumps(payload, indent=2)}")
-                await send_push_notification(token, payload)
+                result = await send_push_notification(token, payload)
+                logger.info(f"Periodic update result: {result}")
+                
+                # If there was an error, log it but continue with other tokens
+                if result.get("status") == "error":
+                    logger.error(f"Error sending update to {token}: {result.get('detail')}")
             except Exception as e:
-                logger.error(f"Error sending update to {token}: {str(e)}")
+                logger.error(f"Error processing update for token {token}: {str(e)}")
         
+        # Sleep for 10 seconds before the next round of updates
+        logger.info("Sleeping for 10 seconds before next update cycle")
         await asyncio.sleep(10)
 
 @app.post("/register-token")
@@ -211,7 +226,9 @@ async def update_train_activity(update: TrainUpdate):
             }
         }
         
-        return await send_push_notification(update.push_token, payload)
+        result = await send_push_notification(update.push_token, payload)
+        logger.info(f"Update result: {result}")
+        return result
     except Exception as e:
         logger.error(f"Error processing update: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -219,25 +236,34 @@ async def update_train_activity(update: TrainUpdate):
 @app.post("/end-train-activity")
 async def end_train_activity(update: TrainUpdate):
     """Endpoint to end a Live Activity"""
-    if update.push_token in active_activities:
-        del active_activities[update.push_token]
+    try:
+        logger.info(f"Ending activity for token: {update.push_token}")
+        
+        if update.push_token in active_activities:
+            del active_activities[update.push_token]
+            logger.info(f"Removed token {update.push_token} from active activities")
 
-    # Create a clean payload without the push_token
-    content_state = update.dict()
-    if 'push_token' in content_state:
-        del content_state['push_token']
+        # Create a clean payload without the push_token
+        content_state = update.dict()
+        if 'push_token' in content_state:
+            del content_state['push_token']
 
-    current_time = int(time.time())
-    payload = {
-        "aps": {
-            "timestamp": current_time,
-            "event": "end",
-            "content-state": content_state,
-            "dismissal-date": current_time  # End immediately
+        current_time = int(time.time())
+        payload = {
+            "aps": {
+                "timestamp": current_time,
+                "event": "end",
+                "content-state": content_state,
+                "dismissal-date": current_time  # End immediately
+            }
         }
-    }
 
-    return await send_push_notification(update.push_token, payload)
+        result = await send_push_notification(update.push_token, payload)
+        logger.info(f"End activity result: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Error ending activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():
@@ -258,6 +284,16 @@ async def debug_endpoint(data: dict):
 async def debug_tokens():
     """Debug endpoint to view registered tokens"""
     return {"tokens": tokens, "activities": active_activities}
+
+@app.get("/debug/jwt")
+async def debug_jwt():
+    """Debug endpoint to test JWT token generation"""
+    try:
+        token = await create_token()
+        return {"token": token}
+    except Exception as e:
+        logger.error(f"Error generating JWT token: {str(e)}")
+        return {"error": str(e)}
 
 @app.on_event("startup")
 async def startup_event():
