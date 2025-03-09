@@ -10,6 +10,27 @@ from datetime import datetime, timedelta
 import os
 import logging
 import base64
+import requests
+from datetime import datetime
+
+# trenitalia functions
+def fetch_train_info(train_number):
+    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
+    timestamp = int(datetime.now().timestamp() * 1000)
+    response = requests.get(url)
+    data = response.text.strip().split("|")
+    station_code = data[1].split("-")[1]
+
+    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/{station_code}/{train_number}/{timestamp}"
+    response = requests.get(url)
+    train_data = response.json()
+    return train_data
+
+def fetch_parameter(parameter, train_number):
+    train_data = fetch_train_info(train_number)
+    for v in train_data:
+        if v == parameter:
+            return train_data[v]
 
 app = FastAPI()
 
@@ -57,6 +78,7 @@ class TrainUpdate(BaseModel):
     seat: Optional[str]
     dataPartenza: int
     dataArrivo: int
+    numeroTreno: str
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
@@ -145,7 +167,6 @@ async def send_push_notification(token: str, payload: dict):
         return {"status": "error", "detail": str(e)}
 
 async def periodic_updates():
-    """Send updates every 30 seconds to all active live activities."""
     while True:
         logger.info(f"Running periodic updates for {len(active_activities)} activities")
         for token, data in list(active_activities.items()):
@@ -181,7 +202,6 @@ async def periodic_updates():
             except Exception as e:
                 logger.error(f"Error processing update for token {token}: {str(e)}")
         
-        # Sleep for 10 seconds before the next round of updates
         logger.info("Sleeping for 10 seconds before next update cycle")
         await asyncio.sleep(10)
 
