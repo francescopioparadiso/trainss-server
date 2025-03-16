@@ -207,6 +207,7 @@ async def periodic_updates():
 
 @app.post("/register-token")
 async def register_token(registration: TokenRegistration):
+    """Register a push token for a train"""
     try:
         logger.info(f"Registering token for train {registration.train_id}")
         tokens[registration.push_token] = registration.train_id
@@ -234,48 +235,9 @@ async def update_train_activity(update: TrainUpdate):
         if update.numeroTreno:
             try:
                 logger.info(f"Fetching real-time data for train {update.numeroTreno}")
-                train_data = fetch_train_info(update.numeroTreno)
                 
-                # Update with real data if available
-                if 'stazioneUltimoRilevamento' in train_data:
-                    update_dict['stazioneUltimoRilevamento'] = train_data['stazioneUltimoRilevamento']
-                
-                if 'ultimoRilev' in train_data:
-                    update_dict['orarioUltimoRilevamento'] = train_data['ultimoRilev']
-                
-                if 'ritardo' in train_data:
-                    update_dict['ritardo'] = train_data['ritardo']
-                
-                if 'origine' in train_data and not update_dict.get('stazionePartenza'):
-                    update_dict['stazionePartenza'] = train_data['origine']
-                
-                if 'orarioPartenza' in train_data and not update_dict.get('orarioPartenza'):
-                    update_dict['orarioPartenza'] = train_data['orarioPartenza']
-                
-                if 'destinazione' in train_data and not update_dict.get('stazioneArrivo'):
-                    update_dict['stazioneArrivo'] = train_data['destinazione']
-                
-                if 'orarioArrivo' in train_data and not update_dict.get('orarioArrivo'):
-                    update_dict['orarioArrivo'] = train_data['orarioArrivo']
-                
-                if 'subTitle' in train_data:
-                    update_dict['problemi'] = train_data['subTitle']
-                
-                # Find next station
-                if 'fermate' in train_data:
-                    next_station = None
-                    current_time = int(datetime.now().timestamp() * 1000)
-                    
-                    for fermata in train_data['fermate']:
-                        if fermata.get('partenzaReale', 0) == 0 and fermata.get('partenzaTeorica', 0) > current_time:
-                            next_station = fermata
-                            break
-                    
-                    if next_station:
-                        tempo_prossima_stazione = max(0, int((next_station['partenzaTeorica'] - current_time) / 1000))
-                        update_dict['tempoProssimaStazione'] = tempo_prossima_stazione
-                        update_dict['prossimaStazione'] = next_station.get('stazione', '')
-                        update_dict['prossimoBinario'] = next_station.get('binarioProgrammatoPartenzaDescrizione', '')
+                update_dict['stazioneUltimoRilevamento'] = fetch_parameter('stazioneUltimoRilevamento', update.numeroTreno)
+                update_dict['ritardo'] = fetch_parameter('ritardo', update.numeroTreno)
                 
                 logger.info(f"Updated with real data from Trenitalia API")
             except Exception as e:
