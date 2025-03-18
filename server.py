@@ -127,6 +127,8 @@ async def send_push_notification(token: str, payload: dict):
             'apns-priority': '10',
             'content-type': 'application/json'
         }
+
+        logger.info(fetch_parameter("stazioneUltimoRilevamento",9808))
         
         url = f'https://{APNS_HOST}/3/device/{token}'
         
