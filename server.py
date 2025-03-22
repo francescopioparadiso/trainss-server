@@ -13,8 +13,9 @@ import base64
 import requests
 from datetime import datetime
 
-# trenitalia functions
-def fetch_train_info(train_number):
+
+# trenitalia function
+def fetch_parameter(parameter, train_number):
     url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
     timestamp = int(datetime.now().timestamp() * 1000)
     response = requests.get(url)
@@ -23,11 +24,8 @@ def fetch_train_info(train_number):
 
     url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/{station_code}/{train_number}/{timestamp}"
     response = requests.get(url)
+    
     train_data = response.json()
-    return train_data
-
-def fetch_parameter(parameter, train_number):
-    train_data = fetch_train_info(train_number)
     for v in train_data:
         if v == parameter:
             return train_data[v]
@@ -180,8 +178,10 @@ async def periodic_updates():
                 if 'push_token' in content_state:
                     del content_state['push_token']
 
+                # Payload overwriting
                 content_state["stazioneUltimoRilevamento"] = fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])
-                logger.info(f"Overwriting payload with {fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])}")
+                content_state["oraUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
+                content_state["ritardo"] = fetch_parameter('ritardo',content_state['numeroTreno'])
                 
                 current_time = int(time.time())
                 payload = {
@@ -189,9 +189,7 @@ async def periodic_updates():
                         "timestamp": current_time,
                         "event": "update",
                         "content-state": content_state,
-                        "relevance-score": 100.0,
-                        "stale-date": current_time + 1800,  # 30 minutes from now
-                        "dismissal-date": current_time + 3600  # 1 hour from now
+                        "relevance-score": 100.0
                     }
                 }
                 
@@ -275,9 +273,7 @@ async def update_train_activity(update: TrainUpdate):
                 "timestamp": current_time,
                 "event": "update",
                 "content-state": content_state,
-                "relevance-score": 100.0,
-                "stale-date": current_time + 1800,  # 30 minutes from now
-                "dismissal-date": current_time + 3600  # 1 hour from now
+                "relevance-score": 100.0
             }
         }
         
@@ -348,79 +344,6 @@ async def debug_jwt():
         return {"token": token}
     except Exception as e:
         logger.error(f"Error generating JWT token: {str(e)}")
-        return {"error": str(e)}
-
-@app.post("/debug/fetch-train")
-async def debug_fetch_train(data: dict):
-    """Debug endpoint to manually fetch train data from Trenitalia API"""
-    try:
-        train_number = data.get("train_number")
-        if not train_number:
-            return {"error": "train_number is required"}
-            
-        logger.info(f"Manually fetching data for train {train_number}")
-        
-        try:
-            # Fetch data from Trenitalia API
-            train_data = fetch_train_info(train_number)
-            
-            # Extract key information
-            result = {
-                "stazioneUltimoRilevamento": train_data.get("stazioneUltimoRilevamento", ""),
-                "orarioUltimoRilevamento": train_data.get("ultimoRilev", 0),
-                "ritardo": train_data.get("ritardo", 0),
-                "problemi": train_data.get("subTitle", ""),
-                "stazionePartenza": train_data.get("origine", ""),
-                "orarioPartenza": train_data.get("orarioPartenza", 0),
-                "stazioneArrivo": train_data.get("destinazione", ""),
-                "orarioArrivo": train_data.get("orarioArrivo", 0)
-            }
-            
-            # Find next station
-            if "fermate" in train_data:
-                next_station = None
-                current_time = int(datetime.now().timestamp() * 1000)
-                
-                for fermata in train_data["fermate"]:
-                    if fermata.get("partenzaReale", 0) == 0 and fermata.get("partenzaTeorica", 0) > current_time:
-                        next_station = fermata
-                        break
-                
-                if next_station:
-                    result["prossimaStazione"] = next_station.get("stazione", "")
-                    result["prossimoBinario"] = next_station.get("binarioProgrammatoPartenzaDescrizione", "")
-                    result["tempoProssimaStazione"] = max(0, int((next_station["partenzaTeorica"] - current_time) / 1000))
-            
-            # If a token is provided, update that token's data
-            token = data.get("push_token")
-            if token and token in active_activities:
-                logger.info(f"Updating token {token} with fetched data")
-                
-                # Update the token's data
-                for key, value in result.items():
-                    active_activities[token][key] = value
-                
-                # Send an update
-                await update_train_activity(token)
-                
-                return {
-                    "status": "success",
-                    "data": result,
-                    "token_updated": True
-                }
-            
-            return {
-                "status": "success",
-                "data": result,
-                "token_updated": False
-            }
-            
-        except Exception as e:
-            logger.error(f"Error fetching train data: {str(e)}")
-            return {"error": f"Error fetching train data: {str(e)}"}
-            
-    except Exception as e:
-        logger.error(f"Error in debug fetch: {str(e)}")
         return {"error": str(e)}
 
 @app.on_event("startup")
