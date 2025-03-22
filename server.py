@@ -70,19 +70,41 @@ def fetch_parameter(parameter, train_number):
             return train_data[v]
 
 def fetch_fermate_info(parameter, train_number):
-    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
-    timestamp = int(datetime.now().timestamp() * 1000)
-    response = requests.get(url)
-    data = response.text.strip().split("|")
-    station_code = data[1].split("-")[1]
+    fermate_database = fetch_parameter("fermate", train_number)
 
-    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/{station_code}/{train_number}/{timestamp}"
-    response = requests.get(url)
-    
-    train_data = response.json()
-    for v in train_data:
-        if v == parameter:
-            return train_data[v]
+    if parameter == "prossima_stazione":
+        for d in fermate_database:
+            stazione = d.get("stazione")
+            partenza_reale = d.get("partenzaReale")
+            if partenza_reale is None:
+                return stazione
+    elif parameter == "prossimo_binario":
+        for d in fermate_database:
+            binarioEffettivoArrivo = d.get("binarioEffettivoArrivoDescrizione")
+            binarioProgrammatoArrivo = d.get("binarioProgrammatoArrivoDescrizione")
+            binarioEffettivoPartenza = d.get("binarioEffettivoPartenzaDescrizione")
+            binarioProgrammatoPartenza = d.get("binarioProgrammatoPartenzaDescrizione")
+            partenza_reale = d.get("partenzaReale")
+            if partenza_reale is None:
+                if binarioEffettivoPartenza is not None:
+                    return binarioEffettivoPartenza
+                elif binarioProgrammatoPartenza is not None:
+                    return binarioProgrammatoPartenza
+                elif binarioEffettivoArrivo is not None:
+                    return binarioEffettivoArrivo
+                else:
+                    return binarioProgrammatoArrivo
+    elif parameter == "tempo_prossima_stazione":
+        ritardo = fetch_parameter("ritardo", train_number)
+        for d in fermate_database:
+            partenza_teorica = d.get("partenza_teorica")
+            arrivo_teorico = d.get("arrivo_teorico")
+            partenza_reale = d.get("partenzaReale")
+            if partenza_reale is None:
+                if arrivo_teorico is not None:
+                    return how_much(add_minutes(arrivo_teorico, ritardo))
+                elif partenza_teorica is not None:
+                    return how_much(add_minutes(partenza_teorica, ritardo))
 
 app = FastAPI()
 
