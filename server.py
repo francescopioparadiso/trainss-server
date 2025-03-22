@@ -11,11 +11,65 @@ import os
 import logging
 import base64
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 # trenitalia function
+def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
+    try:
+        # If the input is an int or a string number, treat it as milliseconds
+        if isinstance(time_str_or_millis, int) or (isinstance(time_str_or_millis, str) and time_str_or_millis.isdigit()):
+            millis = int(time_str_or_millis)
+            date_obj = datetime.fromtimestamp(millis / 1000)
+        else:
+            # Else, assume it's a "HH:MM" string
+            date_obj = datetime.strptime(time_str_or_millis, "%H:%M")
+        
+        # Add the minutes
+        new_time = date_obj + timedelta(minutes=minutes_to_add)
+        # Return formatted time
+        return new_time.strftime("%H:%M")
+    except (ValueError, TypeError):
+        return None
+
+def how_much(to_time_str: str) -> int:
+    try:
+        # Get current time in minutes since midnight
+        now = datetime.now()
+        current_minutes = now.hour * 60 + now.minute
+
+        # Parse the target time
+        target_hour, target_minute = map(int, to_time_str.split(":"))
+        target_minutes = target_hour * 60 + target_minute
+
+        # Calculate difference
+        difference = target_minutes - current_minutes
+        if difference < 0:
+            difference += 24 * 60  # handle next day case
+
+        return difference
+    except (ValueError, IndexError):
+        return None
+
+def fetch_train_info(train_number):
+    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
+    timestamp = int(datetime.now().timestamp() * 1000)
+    response = requests.get(url)
+    data = response.text.strip().split("|")
+    station_code = data[1].split("-")[1]
+
+    url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/{station_code}/{train_number}/{timestamp}"
+    response = requests.get(url)
+    train_data = response.json()
+    return train_data
+
 def fetch_parameter(parameter, train_number):
+    train_data = fetch_train_info(train_number)
+    for v in train_data:
+        if v == parameter:
+            return train_data[v]
+
+def fetch_fermate_info(parameter, train_number):
     url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
     timestamp = int(datetime.now().timestamp() * 1000)
     response = requests.get(url)
@@ -180,9 +234,12 @@ async def periodic_updates():
 
                 # Payload overwriting
                 content_state["stazioneUltimoRilevamento"] = fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])
-                content_state["oraUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
-                content_state["ritardo"] = fetch_parameter('ritardo',content_state['numeroTreno'])
-                
+                content_state["orarioUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
+                content_state["ritardo"] = fetch_parameter('ritardo', content_state['numeroTreno'])
+                content_state["prossimaStazione"] = fetch_fermate_info("prossima_stazione", content_state['numeroTreno'])
+                content_state["prossimoBinario"] = fetch_fermate_info("prossimo_binario", content_state['numeroTreno'])
+                content_state["tempoProssimaStazione"] = fetch_fermate_info("tempo_prossima_stazione", content_state['numeroTreno'])
+
                 current_time = int(time.time())
                 payload = {
                     "aps": {
