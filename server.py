@@ -179,6 +179,9 @@ async def periodic_updates():
                 content_state = data.copy()
                 if 'push_token' in content_state:
                     del content_state['push_token']
+
+                content_state["stazioneUltimoRilevamento"] = fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])
+                logger.info(f"Overwriting payload with {fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])}")
                 
                 current_time = int(time.time())
                 payload = {
@@ -264,8 +267,6 @@ async def update_train_activity(update: TrainUpdate):
         content_state = update_dict.copy()
         if 'push_token' in content_state:
             del content_state['push_token']
-        
-        content_state["stazioneUltimoRilevamento"] = fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])
         
         # Create payload for APNs
         current_time = int(time.time())
