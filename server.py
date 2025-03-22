@@ -265,7 +265,8 @@ async def update_train_activity(update: TrainUpdate):
         if 'push_token' in content_state:
             del content_state['push_token']
         
-        logger.info(f" Questo è il primo debug: {fetch_parameter("stazioneUltimoRilevamento",9808)}")
+        prova = fetch_parameter("stazioneUltimoRilevamento",9808)
+        logger.info(f"Questo è il primo debug: {prova}")
         logger.info(f" Questo è il secondo debug: {content_state["numeroTreno"]}")
         
         # Create payload for APNs
