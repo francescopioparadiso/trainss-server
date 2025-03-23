@@ -13,8 +13,6 @@ import base64
 import requests
 from datetime import datetime, timedelta
 
-
-# trenitalia function
 def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
     try:
         # If the input is an int or a string number, treat it as milliseconds
@@ -51,6 +49,7 @@ def how_much(to_time_str: str) -> int:
     except (ValueError, IndexError):
         return None
 
+# trenitalia functions
 def fetch_train_info(train_number):
     url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
     timestamp = int(datetime.now().timestamp() * 1000)
@@ -105,6 +104,125 @@ def fetch_fermate_info(parameter, train_number):
                     return how_much(add_minutes(arrivo_teorico, ritardo))
                 elif partenza_teorica is not None:
                     return how_much(add_minutes(partenza_teorica, ritardo))
+
+# italo functions
+def _decode_json (s):
+    if s == '':
+        return None
+    return json.loads(s)
+
+def _decode_lines (s, linefunc):
+    if s == '':
+        return []
+    
+    lines = s.strip().split('\n')
+    result = []
+    for line in lines:
+        result.append(linefunc(line))
+            
+    return result
+       
+class ItaloAPI:
+    def __init__ (self, **options):
+        self.base = 'https://italoinviaggio.italotreno.it/api/'
+        self.__verbose = options.get('verbose', False)
+        self.__urlopen = options.get('urlopen', urlopen)
+        self.__plainoutput = options.get('plainoutput', False)
+        self.__decoders = {
+            'RicercaTrenoService':     _decode_json,
+            'RicercaStazioneService':      _decode_json,
+        }
+        self.__default_decoder = lambda x: x
+
+    def __checkAndDecode(self, function, data):
+        decoder = self.__decoders.get(function, self.__default_decoder)
+        return decoder(data)
+    
+    def RicercaStazione_query(self,station='Milano Centrale',station_code='MC_'):
+        query='&CodiceStazione='+station_code+'&NomeStazione='+urlp.quote_plus(station)
+        return query
+    
+    def RicercaTreno_query(self,train_number):
+        query='&TrainNumber='+str(train_number)
+        return query
+        
+    def call (self, train_number, **options):
+        plain = options.get('plainoutput', self.__plainoutput)
+        verbose = options.get('verbose', self.__verbose)
+        
+        query = self.RicercaTreno_query(train_number)
+        
+        url = self.base + 'RicercaTrenoService' + '?' + query
+        
+        if verbose:
+            print (url)
+
+        req = self.__urlopen(url)
+        data = req.read().decode('utf-8')
+        
+        if plain:
+            return data
+        else:
+            return self.__checkAndDecode ('RicercaTrenoService', data)
+        
+def fetch_parameter_italo(parameter, train_number):
+    data = ItaloAPI().call(train_number)
+
+    if parameter == "orarioUltimoRilevamento":
+        for dict in data:
+            if dict == "LastUpdate":
+                return data[dict]
+    elif parameter == "ritardo":
+        for dict in data:
+            if dict == "TrainSchedule":
+                for key in data[dict]:
+                    if key == "Distruption":
+                        for keyy in data[dict][key]:
+                            if keyy == "DelayAmount":
+                                return data[dict][key][keyy]
+    elif parameter == "prossimaStazione":
+        for dict in data:
+            if dict == "TrainSchedule":
+                for key in data[dict]:
+                    if key == "StazioniNonFerme":
+                        for dictt in data[dict][key]:
+                            for keyy in dictt:
+                                if keyy == "LocationDescription":
+                                    return dictt[keyy]
+    elif parameter == "prossimoBinario":
+        for dict in data:
+            if dict == "TrainSchedule":
+                for key in data[dict]:
+                    if key == "StazioniNonFerme":
+                        for dictt in data[dict][key]:
+                            for keyy in dictt:
+                                if keyy == "ActualArrivalPlatform":
+                                    if dictt[keyy] is not None:
+                                        return dictt[keyy]
+                                    else:
+                                        return "-"
+    elif parameter == "tempoProssimaStazione":
+        delay = 0
+        for dict in data:
+            if dict == "TrainSchedule":
+                for key in data[dict]:
+                    if key == "Distruption":
+                        for keyy in data[dict][key]:
+                            if keyy == "DelayAmount":
+                                delay = data[dict][key][keyy]
+        for dict in data:
+            if dict == "TrainSchedule":
+                for key in data[dict]:
+                    if key == "StazioniNonFerme":
+                        for dictt in data[dict][key]:
+                            for keyy in dictt:
+                                if keyy == "EstimatedArrivalTime" and dictt[keyy] != "01:00":
+                                    return add_minutes(dictt[keyy], delay)
+                            for keyy in dictt:
+                                if keyy == "EstimatedDepartureTime" and dictt[keyy] != "01:00":
+                                    return add_minutes(dictt[keyy], delay)
+
+
 
 app = FastAPI()
 
@@ -255,14 +373,19 @@ async def periodic_updates():
                     del content_state['push_token']
 
                 # Payload overwriting
-                content_state["stazioneUltimoRilevamento"] = fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])
-                content_state["orarioUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
-                content_state["ritardo"] = fetch_parameter('ritardo', content_state['numeroTreno'])
-                content_state["prossimaStazione"] = fetch_fermate_info("prossima_stazione", content_state['numeroTreno'])
-                content_state["prossimoBinario"] = fetch_fermate_info("prossimo_binario", content_state['numeroTreno'])
-                content_state["tempoProssimaStazione"] = fetch_fermate_info("tempo_prossima_stazione", content_state['numeroTreno'])
-
-                logger.info(f"Prova del provider: {content_state['provider']}")
+                if content_state["provider"] == "Trenitalia":
+                    content_state["stazioneUltimoRilevamento"] = fetch_parameter('stazioneUltimoRilevamento',content_state['numeroTreno'])
+                    content_state["orarioUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
+                    content_state["ritardo"] = fetch_parameter('ritardo', content_state['numeroTreno'])
+                    content_state["prossimaStazione"] = fetch_fermate_info("prossima_stazione", content_state['numeroTreno'])
+                    content_state["prossimoBinario"] = fetch_fermate_info("prossimo_binario", content_state['numeroTreno'])
+                    content_state["tempoProssimaStazione"] = fetch_fermate_info("tempo_prossima_stazione", content_state['numeroTreno'])
+                else:
+                    content_state["stazioneUltimoRilevamento"] = fetch_parameter_italo('stazioneUltimoRilevamento',content_state['numeroTreno'])
+                    content_state["ritardo"] = fetch_parameter_italo('ritardo', content_state['numeroTreno'])
+                    content_state["prossimaStazione"] = fetch_parameter_italo("prossimaStazione", content_state['numeroTreno'])
+                    content_state["prossimoBinario"] = fetch_parameter_italo("prossimoBinario", content_state['numeroTreno'])
+                    content_state["tempoProssimaStazione"] = fetch_parameter_italo("tempoProssimaStazione", content_state['numeroTreno'])
 
                 current_time = int(time.time())
                 payload = {
