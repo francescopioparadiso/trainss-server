@@ -153,8 +153,7 @@ class TrainUpdate(BaseModel):
     dataPartenza: int
     dataArrivo: int
     numeroTreno: Optional[str] = None
-    provider: Optional[str] = None
-
+    provider: str
 async def create_token():
     """Create a JWT token for APNs authentication."""
     try:
