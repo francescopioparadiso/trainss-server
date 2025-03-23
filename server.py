@@ -6,12 +6,17 @@ import json
 import httpx
 from typing import Optional, Dict
 import asyncio
-from datetime import datetime, timedelta
 import os
 import logging
 import base64
 import requests
 from datetime import datetime, timedelta
+import urllib.parse as urlp
+try:
+    from urllib.request import urlopen
+except ImportError:
+    from urllib import urlopen  
+
 
 def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
     try:
