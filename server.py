@@ -152,7 +152,8 @@ class TrainUpdate(BaseModel):
     seat: Optional[str]
     dataPartenza: int
     dataArrivo: int
-    numeroTreno: Optional[str] = None  # Make it optional with default None
+    numeroTreno: Optional[str] = None
+    provider: Optional[str] = None
 
 async def create_token():
     """Create a JWT token for APNs authentication."""
@@ -262,6 +263,8 @@ async def periodic_updates():
                 content_state["prossimoBinario"] = fetch_fermate_info("prossimo_binario", content_state['numeroTreno'])
                 content_state["tempoProssimaStazione"] = fetch_fermate_info("tempo_prossima_stazione", content_state['numeroTreno'])
 
+                logger.info(f"Prova del provider: {content_state['provider']}")
+
                 current_time = int(time.time())
                 payload = {
                     "aps": {
@@ -310,31 +313,6 @@ async def update_train_activity(update: TrainUpdate):
             
         # Store the update with all fields
         update_dict = update.dict()
-        
-        # If numeroTreno is provided, try to fetch real-time data from Trenitalia API
-        if update.numeroTreno:
-            try:
-                logger.info(f"Fetching real-time data for train {update.numeroTreno}")
-                
-                update_dict['stazioneUltimoRilevamento'] = fetch_parameter('stazioneUltimoRilevamento', update.numeroTreno)
-                update_dict['ritardo'] = fetch_parameter('ritardo', update.numeroTreno)
-                
-                logger.info(f"Updated with real data from Trenitalia API")
-            except Exception as e:
-                logger.error(f"Error fetching data from Trenitalia API: {str(e)}")
-        else:
-            # Ensure time values are properly formatted
-            current_time = int(time.time())
-            
-            # If tempoProssimaStazione is 0 or not provided, calculate it based on arrival time
-            if update_dict.get('tempoProssimaStazione', 0) == 0 and update_dict.get('orarioArrivo', 0) > 0:
-                arrival_time = update_dict.get('orarioArrivo', 0) / 1000  # Convert from milliseconds
-                if arrival_time > current_time:
-                    update_dict['tempoProssimaStazione'] = max(0, int(arrival_time - current_time))
-            
-            # Update orarioUltimoRilevamento if not provided or too old
-            if update_dict.get('orarioUltimoRilevamento', 0) == 0:
-                update_dict['orarioUltimoRilevamento'] = current_time * 1000  # Convert to milliseconds
         
         # Store the updated data
         active_activities[update.push_token] = update_dict
