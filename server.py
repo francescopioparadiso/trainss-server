@@ -173,8 +173,6 @@ class ItaloAPI:
 def fetch_parameter_italo(parameter, train_number):
     data = ItaloAPI().call(train_number)
 
-    if parameter == "stazioneUltimoRilevamento":
-        return ""
     if parameter == "orarioUltimoRilevamento":
         for dict in data:
             if dict == "LastUpdate":
@@ -224,10 +222,10 @@ def fetch_parameter_italo(parameter, train_number):
                         for dictt in data[dict][key]:
                             for keyy in dictt:
                                 if keyy == "EstimatedArrivalTime" and dictt[keyy] != "01:00":
-                                    return how_much(add_minutes(dictt[keyy], delay))
+                                    return add_minutes(dictt[keyy], delay)
                             for keyy in dictt:
                                 if keyy == "EstimatedDepartureTime" and dictt[keyy] != "01:00":
-                                    return how_much(add_minutes(dictt[keyy], delay))
+                                    return add_minutes(dictt[keyy], delay)
 
 
 
@@ -400,7 +398,7 @@ async def periodic_updates():
                     content_state["prossimoBinario"] = fetch_fermate_info("prossimo_binario", content_state['numeroTreno'])
                     content_state["tempoProssimaStazione"] = fetch_fermate_info("tempo_prossima_stazione", content_state['numeroTreno'])
                 else:
-                    content_state["orarioUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
+                    content_state["stazioneUltimoRilevamento"] = fetch_parameter_italo('stazioneUltimoRilevamento',content_state['numeroTreno'])
                     content_state["ritardo"] = fetch_parameter_italo('ritardo', content_state['numeroTreno'])
                     content_state["prossimaStazione"] = fetch_parameter_italo("prossimaStazione", content_state['numeroTreno'])
                     content_state["prossimoBinario"] = fetch_parameter_italo("prossimoBinario", content_state['numeroTreno'])
