@@ -210,7 +210,7 @@ def fetch_parameter_italo(parameter, train_number):
     if parameter == "orarioUltimoRilevamento":
         for dict in data:
             if dict == "LastUpdate":
-                return time_to_millis(data[dict])
+                return data[dict]
     elif parameter == "ritardo":
         for dict in data:
             if dict == "TrainSchedule":
