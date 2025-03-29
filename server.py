@@ -10,7 +10,7 @@ import os
 import logging
 import base64
 import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import urllib.parse as urlp
 try:
     from urllib.request import urlopen
@@ -18,7 +18,23 @@ except ImportError:
     from urllib import urlopen  
 
 
-# utility functions
+def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
+    try:
+        # If the input is an int or a string number, treat it as milliseconds
+        if isinstance(time_str_or_millis, int) or (isinstance(time_str_or_millis, str) and time_str_or_millis.isdigit()):
+            millis = int(time_str_or_millis)
+            date_obj = datetime.fromtimestamp(millis / 1000)
+        else:
+            # Else, assume it's a "HH:MM" string
+            date_obj = datetime.strptime(time_str_or_millis, "%H:%M")
+        
+        # Add the minutes
+        new_time = date_obj + timedelta(minutes=minutes_to_add)
+        # Return formatted time
+        return new_time.strftime("%H:%M")
+    except (ValueError, TypeError):
+        return None
+
 def how_much(to_time_str: str) -> int:
     try:
         # Get current time in minutes since midnight
@@ -38,54 +54,6 @@ def how_much(to_time_str: str) -> int:
     except (ValueError, IndexError):
         return None
 
-def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
-    try:
-        # If the input is an int or a string number, treat it as milliseconds
-        if isinstance(time_str_or_millis, int) or (isinstance(time_str_or_millis, str) and time_str_or_millis.isdigit()):
-            millis = int(time_str_or_millis)
-            date_obj = datetime.fromtimestamp(millis / 1000, tz=timezone.utc)  # Convert from UTC
-        else:
-            # Else, assume it's a "HH:MM" string
-            date_obj = datetime.strptime(time_str_or_millis, "%H:%M")
-        
-        # Adjust for local timezone (use datetime.timezone)
-        date_obj = date_obj.replace(tzinfo=timezone(timedelta(hours=0)))
-        
-        # Add the minutes
-        new_time = date_obj + timedelta(minutes=minutes_to_add)
-        
-        # Convert back to local timezone if necessary
-        new_time = new_time.astimezone(timezone(timedelta(hours=0)))
-        
-        # Return formatted time
-        return new_time.strftime("%H:%M")
-    except (ValueError, TypeError):
-        return None
-
-def time_to_millis(time_str: str) -> int:
-    try:
-        # Get the current date
-        today = datetime.now().date()
-
-        # Parse the time string into a datetime object with today's date
-        time_obj = datetime.strptime(time_str, "%H:%M")
-        time_obj = time_obj.replace(year=today.year, month=today.month, day=today.day)
-
-        # Adjust for local timezone (use datetime.timezone)
-        time_obj = time_obj.replace(tzinfo=timezone(timedelta(hours=0)))
-        
-        # Convert to UTC time zone
-        time_obj = time_obj.astimezone(timezone.utc)
-        
-        # Get the Unix epoch (1970-01-01 00:00:00 UTC)
-        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-        # Calculate the difference in seconds and convert to milliseconds
-        delta = time_obj - epoch
-        return int(delta.total_seconds() * 1000)
-    except ValueError:
-        return None
-    
 # trenitalia functions
 def fetch_train_info(train_number):
     url = f"http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/{train_number}"
@@ -433,7 +401,7 @@ async def periodic_updates():
                     content_state["tempoProssimaStazione"] = fetch_fermate_info("tempo_prossima_stazione", content_state['numeroTreno'])
                 else:
                     content_state["stazioneUltimoRilevamento"] = fetch_parameter_italo('stazioneUltimoRilevamento',content_state['numeroTreno'])
-                    content_state["orarioUltimoRilevamento"] = fetch_parameter('orarioUltimoRilevamento',content_state['numeroTreno'])
+                    content_state["orarioUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
                     content_state["ritardo"] = fetch_parameter_italo('ritardo', content_state['numeroTreno'])
                     content_state["prossimaStazione"] = fetch_parameter_italo("prossimaStazione", content_state['numeroTreno'])
                     content_state["prossimoBinario"] = fetch_parameter_italo("prossimoBinario", content_state['numeroTreno'])
