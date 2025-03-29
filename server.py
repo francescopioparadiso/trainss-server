@@ -42,7 +42,26 @@ def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
     except (ValueError, TypeError):
         return None
 
-def how_much(to_time_str: str) -> int:
+def how_much_trenitalia(to_time_str: str) -> int:
+    try:
+        # Get current time in minutes since midnight
+        now = datetime.now(timezone(timedelta(hours=0)))
+        current_minutes = now.hour * 60 + now.minute
+
+        # Parse the target time
+        target_hour, target_minute = map(int, to_time_str.split(":"))
+        target_minutes = target_hour * 60 + target_minute
+
+        # Calculate difference
+        difference = target_minutes - current_minutes
+        if difference < 0:
+            difference += 24 * 60  # handle next day case
+
+        return difference
+    except (ValueError, IndexError):
+        return None
+    
+def how_much_italo(to_time_str: str) -> int:
     try:
         # Get current time in minutes since midnight
         now = datetime.now(timezone(timedelta(hours=1)))
@@ -141,9 +160,11 @@ def fetch_fermate_info(parameter, train_number):
             partenza_reale = d.get("partenzaReale")
             if partenza_reale is None:
                 if arrivo_teorico is not None:
-                    return how_much(add_minutes(arrivo_teorico, ritardo))
+                    return how_much_trenitalia(add_minutes(arrivo_teorico, ritardo))
                 elif partenza_teorica is not None:
-                    return how_much(add_minutes(partenza_teorica, ritardo))
+                    return how_much_trenitalia(add_minutes(partenza_teorica, ritardo))
+                else:
+                    return 0
 
 # italo functions
 def _decode_json (s):
@@ -259,10 +280,10 @@ def fetch_parameter_italo(parameter, train_number):
                         for dictt in data[dict][key]:
                             for keyy in dictt:
                                 if keyy == "EstimatedArrivalTime" and dictt[keyy] != "01:00":
-                                    return how_much(add_minutes(dictt[keyy], delay))
+                                    return how_much_italo(add_minutes(dictt[keyy], delay))
                             for keyy in dictt:
                                 if keyy == "EstimatedDepartureTime" and dictt[keyy] != "01:00":
-                                    return how_much(add_minutes(dictt[keyy], delay))
+                                    return how_much_italo(add_minutes(dictt[keyy], delay))
 
 
 
