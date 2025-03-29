@@ -222,10 +222,10 @@ def fetch_parameter_italo(parameter, train_number):
                         for dictt in data[dict][key]:
                             for keyy in dictt:
                                 if keyy == "EstimatedArrivalTime" and dictt[keyy] != "01:00":
-                                    return add_minutes(dictt[keyy], delay)
+                                    return how_much(add_minutes(dictt[keyy], delay))
                             for keyy in dictt:
                                 if keyy == "EstimatedDepartureTime" and dictt[keyy] != "01:00":
-                                    return add_minutes(dictt[keyy], delay)
+                                    return how_much(add_minutes(dictt[keyy], delay))
 
 
 
