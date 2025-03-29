@@ -128,8 +128,11 @@ def fetch_fermate_info(parameter, train_number):
                     return binarioProgrammatoPartenza
                 elif binarioEffettivoArrivo is not None:
                     return binarioEffettivoArrivo
-                else:
+                elif binarioProgrammatoArrivo is not None:
                     return binarioProgrammatoArrivo
+                else:
+                    return "-"
+                
     elif parameter == "tempo_prossima_stazione":
         ritardo = fetch_parameter("ritardo", train_number)
         for d in fermate_database:
