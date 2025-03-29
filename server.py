@@ -45,7 +45,7 @@ def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
 def how_much(to_time_str: str) -> int:
     try:
         # Get current time in minutes since midnight
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_minutes = now.hour * 60 + now.minute
 
         # Parse the target time
