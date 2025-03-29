@@ -277,6 +277,18 @@ class TrainUpdate(BaseModel):
     dataArrivo: int
     numeroTreno: Optional[str] = None
     provider: str
+
+async def ping_server():
+    """Pings the server to keep it active."""
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:8000/")
+                logger.info(f"Self-ping status: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Self-ping failed: {str(e)}")
+        await asyncio.sleep(300)
+
 async def create_token():
     """Create a JWT token for APNs authentication."""
     try:
@@ -532,7 +544,8 @@ async def debug_jwt():
 
 @app.on_event("startup")
 async def startup_event():
-    """Start the periodic update task when the server starts"""
+    asyncio.create_task(ping_server())
+
     # Check if APNS_AUTH_KEY is set
     if not os.environ.get('APNS_AUTH_KEY'):
         logger.warning("APNS_AUTH_KEY environment variable is not set. Push notifications will not work!")
