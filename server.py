@@ -29,13 +29,13 @@ def add_minutes(time_str_or_millis, minutes_to_add: int) -> str:
             date_obj = datetime.strptime(time_str_or_millis, "%H:%M")
         
         # Adjust for local timezone (use datetime.timezone)
-        date_obj = date_obj.replace(tzinfo=timezone(timedelta(hours=0)))
+        date_obj = date_obj.replace(tzinfo=timezone(timedelta(hours=1)))
         
         # Add the minutes
         new_time = date_obj + timedelta(minutes=minutes_to_add)
         
         # Convert back to local timezone if necessary
-        new_time = new_time.astimezone(timezone(timedelta(hours=0)))
+        new_time = new_time.astimezone(timezone(timedelta(hours=1)))
         
         # Return formatted time
         return new_time.strftime("%H:%M")
@@ -71,7 +71,7 @@ def time_to_millis(time_str: str) -> int:
         time_obj = time_obj.replace(year=today.year, month=today.month, day=today.day)
 
         # Adjust for local timezone (use datetime.timezone)
-        time_obj = time_obj.replace(tzinfo=timezone(timedelta(hours=0)))
+        time_obj = time_obj.replace(tzinfo=timezone(timedelta(hours=1)))
         
         # Convert to UTC time zone
         time_obj = time_obj.astimezone(timezone.utc)
