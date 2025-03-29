@@ -400,7 +400,6 @@ async def periodic_updates():
                     content_state["prossimoBinario"] = fetch_fermate_info("prossimo_binario", content_state['numeroTreno'])
                     content_state["tempoProssimaStazione"] = fetch_fermate_info("tempo_prossima_stazione", content_state['numeroTreno'])
                 else:
-                    content_state["stazioneUltimoRilevamento"] = fetch_parameter_italo('stazioneUltimoRilevamento',content_state['numeroTreno'])
                     content_state["orarioUltimoRilevamento"] = fetch_parameter('oraUltimoRilevamento',content_state['numeroTreno'])
                     content_state["ritardo"] = fetch_parameter_italo('ritardo', content_state['numeroTreno'])
                     content_state["prossimaStazione"] = fetch_parameter_italo("prossimaStazione", content_state['numeroTreno'])
